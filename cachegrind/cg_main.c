@@ -73,14 +73,6 @@ static Int min_line_size = 0; /* min of L1 and LL cache line sizes */
 
 typedef
    struct {
-      ULong a;  /* total # memory accesses of this kind */
-      ULong m1; /* misses in the first level cache */
-      ULong mL; /* misses in the second level cache */
-   }
-   CacheCC;
-
-typedef
-   struct {
       ULong b;  /* total # branches of this kind */
       ULong mp; /* number of branches mispredicted */
    }
@@ -211,7 +203,7 @@ static void get_debug_info(Addr instr_addr, const HChar **dir,
    DiEpoch ep = VG_(current_DiEpoch)();
    Bool found_file_line = VG_(get_filename_linenum)(
                              ep,
-                             instr_addr, 
+                             instr_addr,
                              file, dir,
                              line
                           );
@@ -331,9 +323,7 @@ void log_1IrGen_0D_cache_access(InstrInfo* n)
 {
    //VG_(printf)("1IrGen_0D :  CCaddr=0x%010lx,  iaddr=0x%010lx,  isize=%lu\n",
    //             n, n->instr_addr, n->instr_len);
-   cachesim_I1_doref_Gen(n->instr_addr, n->instr_len,
-			 &n->parent->Ir.m1, &n->parent->Ir.mL);
-   n->parent->Ir.a++;
+   cachesim_I1_doref_Gen(n->instr_addr, n->instr_len, &n->parent->Ir);
 }
 
 static VG_REGPARM(1)
@@ -341,9 +331,7 @@ void log_1IrNoX_0D_cache_access(InstrInfo* n)
 {
    //VG_(printf)("1IrNoX_0D :  CCaddr=0x%010lx,  iaddr=0x%010lx,  isize=%lu\n",
    //             n, n->instr_addr, n->instr_len);
-   cachesim_I1_doref_NoX(n->instr_addr, n->instr_len,
-			 &n->parent->Ir.m1, &n->parent->Ir.mL);
-   n->parent->Ir.a++;
+   cachesim_I1_doref_NoX(n->instr_addr, n->instr_len, &n->parent->Ir);
 }
 
 static VG_REGPARM(2)
@@ -353,12 +341,8 @@ void log_2IrNoX_0D_cache_access(InstrInfo* n, InstrInfo* n2)
    //            "            CC2addr=0x%010lx, i2addr=0x%010lx, i2size=%lu\n",
    //            n,  n->instr_addr,  n->instr_len,
    //            n2, n2->instr_addr, n2->instr_len);
-   cachesim_I1_doref_NoX(n->instr_addr, n->instr_len,
-			 &n->parent->Ir.m1, &n->parent->Ir.mL);
-   n->parent->Ir.a++;
-   cachesim_I1_doref_NoX(n2->instr_addr, n2->instr_len,
-			 &n2->parent->Ir.m1, &n2->parent->Ir.mL);
-   n2->parent->Ir.a++;
+   cachesim_I1_doref_NoX(n->instr_addr, n->instr_len, &n->parent->Ir);
+   cachesim_I1_doref_NoX(n2->instr_addr, n2->instr_len, &n2->parent->Ir);
 }
 
 static VG_REGPARM(3)
@@ -370,15 +354,9 @@ void log_3IrNoX_0D_cache_access(InstrInfo* n, InstrInfo* n2, InstrInfo* n3)
    //            n,  n->instr_addr,  n->instr_len,
    //            n2, n2->instr_addr, n2->instr_len,
    //            n3, n3->instr_addr, n3->instr_len);
-   cachesim_I1_doref_NoX(n->instr_addr, n->instr_len,
-			 &n->parent->Ir.m1, &n->parent->Ir.mL);
-   n->parent->Ir.a++;
-   cachesim_I1_doref_NoX(n2->instr_addr, n2->instr_len,
-			 &n2->parent->Ir.m1, &n2->parent->Ir.mL);
-   n2->parent->Ir.a++;
-   cachesim_I1_doref_NoX(n3->instr_addr, n3->instr_len,
-			 &n3->parent->Ir.m1, &n3->parent->Ir.mL);
-   n3->parent->Ir.a++;
+   cachesim_I1_doref_NoX(n->instr_addr, n->instr_len, &n->parent->Ir);
+   cachesim_I1_doref_NoX(n2->instr_addr, n2->instr_len, &n2->parent->Ir);
+   cachesim_I1_doref_NoX(n3->instr_addr, n3->instr_len, &n3->parent->Ir);
 }
 
 static VG_REGPARM(3)
@@ -387,13 +365,9 @@ void log_1IrNoX_1Dr_cache_access(InstrInfo* n, Addr data_addr, Word data_size)
    //VG_(printf)("1IrNoX_1Dr:  CCaddr=0x%010lx,  iaddr=0x%010lx,  isize=%lu\n"
    //            "                               daddr=0x%010lx,  dsize=%lu\n",
    //            n, n->instr_addr, n->instr_len, data_addr, data_size);
-   cachesim_I1_doref_NoX(n->instr_addr, n->instr_len,
-			 &n->parent->Ir.m1, &n->parent->Ir.mL);
-   n->parent->Ir.a++;
+   cachesim_I1_doref_NoX(n->instr_addr, n->instr_len, &n->parent->Ir);
 
-   cachesim_D1_doref(data_addr, data_size, 
-                     &n->parent->Dr.m1, &n->parent->Dr.mL);
-   n->parent->Dr.a++;
+   cachesim_D1_doref(data_addr, data_size, &n->parent->Dr);
 }
 
 static VG_REGPARM(3)
@@ -402,13 +376,9 @@ void log_1IrNoX_1Dw_cache_access(InstrInfo* n, Addr data_addr, Word data_size)
    //VG_(printf)("1IrNoX_1Dw:  CCaddr=0x%010lx,  iaddr=0x%010lx,  isize=%lu\n"
    //            "                               daddr=0x%010lx,  dsize=%lu\n",
    //            n, n->instr_addr, n->instr_len, data_addr, data_size);
-   cachesim_I1_doref_NoX(n->instr_addr, n->instr_len,
-			 &n->parent->Ir.m1, &n->parent->Ir.mL);
-   n->parent->Ir.a++;
+   cachesim_I1_doref_NoX(n->instr_addr, n->instr_len, &n->parent->Ir);
 
-   cachesim_D1_doref(data_addr, data_size, 
-                     &n->parent->Dw.m1, &n->parent->Dw.mL);
-   n->parent->Dw.a++;
+   cachesim_D1_doref(data_addr, data_size, &n->parent->Dw);
 }
 
 /* Note that addEvent_D_guarded assumes that log_0Ir_1Dr_cache_access
@@ -419,9 +389,7 @@ void log_0Ir_1Dr_cache_access(InstrInfo* n, Addr data_addr, Word data_size)
 {
    //VG_(printf)("0Ir_1Dr:  CCaddr=0x%010lx,  daddr=0x%010lx,  dsize=%lu\n",
    //            n, data_addr, data_size);
-   cachesim_D1_doref(data_addr, data_size, 
-                     &n->parent->Dr.m1, &n->parent->Dr.mL);
-   n->parent->Dr.a++;
+   cachesim_D1_doref(data_addr, data_size, &n->parent->Dr);
 }
 
 /* See comment on log_0Ir_1Dr_cache_access. */
@@ -430,9 +398,7 @@ void log_0Ir_1Dw_cache_access(InstrInfo* n, Addr data_addr, Word data_size)
 {
    //VG_(printf)("0Ir_1Dw:  CCaddr=0x%010lx,  daddr=0x%010lx,  dsize=%lu\n",
    //            n, data_addr, data_size);
-   cachesim_D1_doref(data_addr, data_size, 
-                     &n->parent->Dw.m1, &n->parent->Dw.mL);
-   n->parent->Dw.a++;
+   cachesim_D1_doref(data_addr, data_size, &n->parent->Dw);
 }
 
 /* For branches, we consult two different predictors, one which
@@ -446,7 +412,7 @@ void log_cond_branch(InstrInfo* n, Word taken)
    //VG_(printf)("cbrnch:  CCaddr=0x%010lx,  taken=0x%010lx\n",
    //             n, taken);
    n->parent->Bc.b++;
-   n->parent->Bc.mp 
+   n->parent->Bc.mp
       += (1 & do_cond_branch_predict(n->instr_addr, taken));
 }
 
@@ -495,11 +461,11 @@ void log_ind_branch(InstrInfo* n, UWord actual_dst)
    events with a single helper call.  */
 
 typedef
-   IRExpr 
+   IRExpr
    IRAtom;
 
-typedef 
-   enum { 
+typedef
+   enum {
       Ev_IrNoX,  // Instruction read not crossing cache lines
       Ev_IrGen,  // Generic Ir, not being detected as IrNoX
       Ev_Dr,     // Data read
@@ -621,7 +587,7 @@ SB_info* get_SB_info(IRSB* sbIn, Addr origAddr)
    // BB never translated before (at this address, at least;  could have
    // been unloaded and then reloaded elsewhere in memory)
    sbInfo = VG_(OSetGen_AllocNode)(instrInfoTable,
-                                sizeof(SB_info) + n_instrs*sizeof(InstrInfo)); 
+                                sizeof(SB_info) + n_instrs*sizeof(InstrInfo));
    sbInfo->SB_addr  = origAddr;
    sbInfo->n_instrs = n_instrs;
    VG_(OSetGen_Insert)( instrInfoTable, sbInfo );
@@ -641,30 +607,30 @@ static void showEvent ( Event* ev )
          break;
       case Ev_Dr:
          VG_(printf)("Dr %p %d EA=", ev->inode, ev->Ev.Dr.szB);
-         ppIRExpr(ev->Ev.Dr.ea); 
+         ppIRExpr(ev->Ev.Dr.ea);
          VG_(printf)("\n");
          break;
       case Ev_Dw:
          VG_(printf)("Dw %p %d EA=", ev->inode, ev->Ev.Dw.szB);
-         ppIRExpr(ev->Ev.Dw.ea); 
+         ppIRExpr(ev->Ev.Dw.ea);
          VG_(printf)("\n");
          break;
       case Ev_Dm:
          VG_(printf)("Dm %p %d EA=", ev->inode, ev->Ev.Dm.szB);
-         ppIRExpr(ev->Ev.Dm.ea); 
+         ppIRExpr(ev->Ev.Dm.ea);
          VG_(printf)("\n");
          break;
       case Ev_Bc:
          VG_(printf)("Bc %p   GA=", ev->inode);
-         ppIRExpr(ev->Ev.Bc.taken); 
+         ppIRExpr(ev->Ev.Bc.taken);
          VG_(printf)("\n");
          break;
       case Ev_Bi:
          VG_(printf)("Bi %p  DST=", ev->inode);
-         ppIRExpr(ev->Ev.Bi.dst); 
+         ppIRExpr(ev->Ev.Bi.dst);
          VG_(printf)("\n");
          break;
-      default: 
+      default:
          tl_assert(0);
          break;
    }
@@ -717,9 +683,9 @@ static void flushEvents ( CgState* cgs )
       ev  = &cgs->events[i];
       ev2 = ( i < cgs->events_used-1 ? &cgs->events[i+1] : NULL );
       ev3 = ( i < cgs->events_used-2 ? &cgs->events[i+2] : NULL );
-      
+
       if (DEBUG_CG) {
-         VG_(printf)("   flush "); 
+         VG_(printf)("   flush ");
          showEvent( ev );
       }
 
@@ -771,8 +737,8 @@ static void flushEvents ( CgState* cgs )
                   helperName = "log_3Ir";
                   helperAddr = &log_3Ir;
                }
-               argv = mkIRExprVec_3( i_node_expr, 
-                                     mkIRExpr_HWord( (HWord)ev2->inode ), 
+               argv = mkIRExprVec_3( i_node_expr,
+                                     mkIRExpr_HWord( (HWord)ev2->inode ),
                                      mkIRExpr_HWord( (HWord)ev3->inode ) );
                regparms = 3;
                i += 3;
@@ -823,8 +789,8 @@ static void flushEvents ( CgState* cgs )
             /* Data read or modify */
             helperName = "log_0Ir_1Dr_cache_access";
             helperAddr = &log_0Ir_1Dr_cache_access;
-            argv = mkIRExprVec_3( i_node_expr, 
-                                  get_Event_dea(ev), 
+            argv = mkIRExprVec_3( i_node_expr,
+                                  get_Event_dea(ev),
                                   mkIRExpr_HWord( get_Event_dszB(ev) ) );
             regparms = 3;
             i++;
@@ -834,7 +800,7 @@ static void flushEvents ( CgState* cgs )
             helperName = "log_0Ir_1Dw_cache_access";
             helperAddr = &log_0Ir_1Dw_cache_access;
             argv = mkIRExprVec_3( i_node_expr,
-                                  get_Event_dea(ev), 
+                                  get_Event_dea(ev),
                                   mkIRExpr_HWord( get_Event_dszB(ev) ) );
             regparms = 3;
             i++;
@@ -863,8 +829,8 @@ static void flushEvents ( CgState* cgs )
       tl_assert(helperName);
       tl_assert(helperAddr);
       tl_assert(argv);
-      di = unsafeIRDirty_0_N( regparms, 
-                              helperName, VG_(fnptr_to_fnentry)( helperAddr ), 
+      di = unsafeIRDirty_0_N( regparms,
+                              helperName, VG_(fnptr_to_fnentry)( helperAddr ),
                               argv );
       addStmtToIRSB( cgs->sbOut, IRStmt_Dirty(di) );
    }
@@ -986,8 +952,8 @@ void addEvent_D_guarded ( CgState* cgs, InstrInfo* inode,
                                 ea, mkIRExpr_HWord( datasize ) );
    regparms    = 3;
    di          = unsafeIRDirty_0_N(
-                    regparms, 
-                    helperName, VG_(fnptr_to_fnentry)( helperAddr ), 
+                    regparms,
+                    helperName, VG_(fnptr_to_fnentry)( helperAddr ),
                     argv );
    di->guard = guard;
    addStmtToIRSB( cgs->sbOut, IRStmt_Dirty(di) );
@@ -999,7 +965,7 @@ void addEvent_Bc ( CgState* cgs, InstrInfo* inode, IRAtom* guard )
 {
    Event* evt;
    tl_assert(isIRAtom(guard));
-   tl_assert(typeOfIRExpr(cgs->sbOut->tyenv, guard) 
+   tl_assert(typeOfIRExpr(cgs->sbOut->tyenv, guard)
              == (sizeof(RegWord)==4 ? Ity_I32 : Ity_I64));
    if (!clo_branch_sim)
       return;
@@ -1019,7 +985,7 @@ void addEvent_Bi ( CgState* cgs, InstrInfo* inode, IRAtom* whereTo )
 {
    Event* evt;
    tl_assert(isIRAtom(whereTo));
-   tl_assert(typeOfIRExpr(cgs->sbOut->tyenv, whereTo) 
+   tl_assert(typeOfIRExpr(cgs->sbOut->tyenv, whereTo)
              == (sizeof(RegWord)==4 ? Ity_I32 : Ity_I64));
    if (!clo_branch_sim)
       return;
@@ -1039,8 +1005,8 @@ void addEvent_Bi ( CgState* cgs, InstrInfo* inode, IRAtom* whereTo )
 
 static
 IRSB* cg_instrument ( VgCallbackClosure* closure,
-                      IRSB* sbIn, 
-                      const VexGuestLayout* layout, 
+                      IRSB* sbIn,
+                      const VexGuestLayout* layout,
                       const VexGuestExtents* vge,
                       const VexArchInfo* archinfo_host,
                       IRType gWordTy, IRType hWordTy )
@@ -1117,7 +1083,7 @@ IRSB* cg_instrument ( VgCallbackClosure* closure,
                      || VG_CLREQ_SZB == isize );
 
             // Get space for and init the inode, record it as the current one.
-            // Subsequent Dr/Dw/Dm events from the same instruction will 
+            // Subsequent Dr/Dw/Dm events from the same instruction will
             // also use it.
             curr_inode = setup_InstrInfo(&cgs, cia, isize);
 
@@ -1130,7 +1096,7 @@ IRSB* cg_instrument ( VgCallbackClosure* closure,
                IRExpr* aexpr = data->Iex.Load.addr;
                // Note also, endianness info is ignored.  I guess
                // that's not interesting.
-               addEvent_Dr( &cgs, curr_inode, sizeofIRType(data->Iex.Load.ty), 
+               addEvent_Dr( &cgs, curr_inode, sizeofIRType(data->Iex.Load.ty),
                                   aexpr );
             }
             break;
@@ -1139,7 +1105,7 @@ IRSB* cg_instrument ( VgCallbackClosure* closure,
          case Ist_Store: {
             IRExpr* data  = st->Ist.Store.data;
             IRExpr* aexpr = st->Ist.Store.addr;
-            addEvent_Dw( &cgs, curr_inode, 
+            addEvent_Dw( &cgs, curr_inode,
                          sizeofIRType(typeOfIRExpr(tyenv, data)), aexpr );
             break;
          }
@@ -1319,9 +1285,9 @@ IRSB* cg_instrument ( VgCallbackClosure* closure,
    if ((sbIn->jumpkind == Ijk_Boring) || (sbIn->jumpkind == Ijk_Call)) {
       if (0) { ppIRExpr( sbIn->next ); VG_(printf)("\n"); }
       switch (sbIn->next->tag) {
-         case Iex_Const: 
+         case Iex_Const:
             break; /* boring - branch to known address */
-         case Iex_RdTmp: 
+         case Iex_RdTmp:
             /* looks like an indirect branch (branch to unknown) */
             addEvent_Bi( &cgs, curr_inode, sbIn->next );
             break;
@@ -1329,7 +1295,7 @@ IRSB* cg_instrument ( VgCallbackClosure* closure,
             /* shouldn't happen - if the incoming IR is properly
                flattened, should only have tmp and const cases to
                consider. */
-            tl_assert(0); 
+            tl_assert(0);
       }
    }
 
@@ -1461,10 +1427,10 @@ static void fprint_CC_table_and_calc_totals(void)
                              " %llu %llu %llu"
                              " %llu %llu %llu %llu\n",
                             lineCC->loc.line,
-                            lineCC->Ir.a, lineCC->Ir.m1, lineCC->Ir.mL, 
+                            lineCC->Ir.a, lineCC->Ir.m1, lineCC->Ir.mL,
                             lineCC->Dr.a, lineCC->Dr.m1, lineCC->Dr.mL,
                             lineCC->Dw.a, lineCC->Dw.m1, lineCC->Dw.mL,
-                            lineCC->Bc.b, lineCC->Bc.mp, 
+                            lineCC->Bc.b, lineCC->Bc.mp,
                             lineCC->Bi.b, lineCC->Bi.mp);
       }
       else if (clo_cache_sim && !clo_branch_sim) {
@@ -1472,7 +1438,7 @@ static void fprint_CC_table_and_calc_totals(void)
                              " %llu %llu %llu"
                              " %llu %llu %llu\n",
                             lineCC->loc.line,
-                            lineCC->Ir.a, lineCC->Ir.m1, lineCC->Ir.mL, 
+                            lineCC->Ir.a, lineCC->Ir.m1, lineCC->Ir.mL,
                             lineCC->Dr.a, lineCC->Dr.m1, lineCC->Dr.mL,
                             lineCC->Dw.a, lineCC->Dw.m1, lineCC->Dw.mL);
       }
@@ -1480,8 +1446,8 @@ static void fprint_CC_table_and_calc_totals(void)
          VG_(fprintf)(fp,  "%d %llu"
                              " %llu %llu %llu %llu\n",
                             lineCC->loc.line,
-                            lineCC->Ir.a, 
-                            lineCC->Bc.b, lineCC->Bc.mp, 
+                            lineCC->Ir.a,
+                            lineCC->Bc.b, lineCC->Bc.mp,
                             lineCC->Bi.b, lineCC->Bi.mp);
       }
       else {
@@ -1515,11 +1481,11 @@ static void fprint_CC_table_and_calc_totals(void)
                         " %llu %llu %llu"
                         " %llu %llu %llu"
                         " %llu %llu %llu"
-                        " %llu %llu %llu %llu\n", 
+                        " %llu %llu %llu %llu\n",
                         Ir_total.a, Ir_total.m1, Ir_total.mL,
                         Dr_total.a, Dr_total.m1, Dr_total.mL,
                         Dw_total.a, Dw_total.m1, Dw_total.mL,
-                        Bc_total.b, Bc_total.mp, 
+                        Bc_total.b, Bc_total.mp,
                         Bi_total.b, Bi_total.mp);
    }
    else if (clo_cache_sim && !clo_branch_sim) {
@@ -1534,14 +1500,14 @@ static void fprint_CC_table_and_calc_totals(void)
    else if (!clo_cache_sim && clo_branch_sim) {
       VG_(fprintf)(fp,  "summary:"
                         " %llu"
-                        " %llu %llu %llu %llu\n", 
+                        " %llu %llu %llu %llu\n",
                         Ir_total.a,
-                        Bc_total.b, Bc_total.mp, 
+                        Bc_total.b, Bc_total.mp,
                         Bi_total.b, Bi_total.mp);
    }
    else {
       VG_(fprintf)(fp, "summary:"
-                        " %llu\n", 
+                        " %llu\n",
                         Ir_total.a);
    }
 
@@ -1571,7 +1537,7 @@ static void cg_fini(Int exitcode)
 
    fprint_CC_table_and_calc_totals();
 
-   if (VG_(clo_verbosity) == 0) 
+   if (VG_(clo_verbosity) == 0)
       return;
 
    // Nb: this isn't called "MAX" because that overshadows a global on Darwin.
@@ -1612,7 +1578,7 @@ static void cg_fini(Int exitcode)
       VG_(sprintf)(fmt, "%%s %%,%dllu  (%%,%dllu rd   + %%,%dllu wr)\n",
                         l1, l2, l3);
 
-      VG_(umsg)(fmt, "D   refs:     ", 
+      VG_(umsg)(fmt, "D   refs:     ",
                      D_total.a, Dr_total.a, Dw_total.a);
       VG_(umsg)(fmt, "D1  misses:   ",
                      D_total.m1, Dr_total.m1, Dw_total.m1);
@@ -1688,14 +1654,14 @@ static void cg_fini(Int exitcode)
       VG_(dmsg)("cachegrind: distinct instrs NoX: %d\n", distinct_instrsNoX);
       VG_(dmsg)("cachegrind: distinct instrs Gen: %d\n", distinct_instrsGen);
       VG_(dmsg)("cachegrind: debug lookups      : %d\n", debug_lookups);
-      
-      VG_(dmsg)("cachegrind: with full      info:%6.1f%% (%d)\n", 
+
+      VG_(dmsg)("cachegrind: with full      info:%6.1f%% (%d)\n",
                 full_debugs * 100.0 / debug_lookups, full_debugs);
-      VG_(dmsg)("cachegrind: with file/line info:%6.1f%% (%d)\n", 
+      VG_(dmsg)("cachegrind: with file/line info:%6.1f%% (%d)\n",
                 file_line_debugs * 100.0 / debug_lookups, file_line_debugs);
-      VG_(dmsg)("cachegrind: with fn name   info:%6.1f%% (%d)\n", 
+      VG_(dmsg)("cachegrind: with fn name   info:%6.1f%% (%d)\n",
                 fn_debugs * 100.0 / debug_lookups, fn_debugs);
-      VG_(dmsg)("cachegrind: with zero      info:%6.1f%% (%d)\n", 
+      VG_(dmsg)("cachegrind: with zero      info:%6.1f%% (%d)\n",
                 no_debugs * 100.0 / debug_lookups, no_debugs);
 
       VG_(dmsg)("cachegrind: string table size: %u\n",
@@ -1723,7 +1689,7 @@ void cg_discard_superblock_info ( Addr orig_addr64, VexGuestExtents vge )
    tl_assert(vge.n_used > 0);
 
    if (DEBUG_CG)
-      VG_(printf)( "discard_basic_block_info: %p, %p, %llu\n", 
+      VG_(printf)( "discard_basic_block_info: %p, %p, %llu\n",
                    (void*)orig_addr,
                    (void*)vge.base[0], (ULong)vge.len[0]);
 
@@ -1803,7 +1769,7 @@ static void cg_pre_clo_init(void)
 
 static void cg_post_clo_init(void)
 {
-   cache_t I1c, D1c, LLc; 
+   cache_t I1c, D1c, LLc;
 
    CC_table =
       VG_(OSetGen_Create)(offsetof(LineCC, loc),
@@ -1854,4 +1820,3 @@ VG_DETERMINE_INTERFACE_VERSION(cg_pre_clo_init)
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
-

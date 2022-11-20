@@ -36,6 +36,18 @@ typedef struct {
    Int line_size;  // bytes
 } cache_t;
 
+typedef
+   struct {
+      ULong a;  /* total # memory accesses of this kind */
+      ULong m1; /* misses in the first level cache */
+      ULong mL; /* misses in the second level cache */
+      ULong l1_words; /* number of different 32 bit words accessed in
+                         l1 evicted lines */
+      ULong llc_words; /* number of different 32 bit words accessed in
+                         llc evicted lines */
+   }
+   CacheCC;
+
 #define MIN_LINE_SIZE         16
 
 // clo_*c used in the call to VG_(str_clo_cache_opt) should be statically
