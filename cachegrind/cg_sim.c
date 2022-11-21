@@ -105,8 +105,9 @@ Int set_used(UWord addr, Int size, Int line_size, UWord* used)
 {
   *used = 0;
   Int offset = addr & (line_size - 1); /* SF line_size must be pow of 2 */
-  offset >>= 2;  /* SF: count 32 bit words */
-  while (offset < line_size && size > 0) {
+  Int words = line_size / 4;
+  offset /= 4;  /* SF: make it offst of 32 bit words */
+  while (offset < words && size > 0) {
       *used |= (1 << offset);
       size -= 4;  /* SF: 32 bit word */
       offset++;
