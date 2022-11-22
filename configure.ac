@@ -137,7 +137,10 @@ fi
 rm $tmpfile
 
 # Make sure we can compile in C99 mode.
-AC_PROG_CC_C99
+m4_warn([obsolete],
+[AC_PROG_CC_C99 is obsolete; use AC_PROG_CC
+])dnl
+AC_REQUIRE(AC_PROG_CC)
 if test "$ac_cv_prog_cc_c99" = "no"; then
     AC_MSG_ERROR([Valgrind relies on a C compiler supporting C99])
 fi

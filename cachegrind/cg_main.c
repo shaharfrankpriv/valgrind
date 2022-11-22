@@ -1381,11 +1381,11 @@ static void fprint_CC_table_and_calc_totals(void)
    }
    // "events:" line
    if (clo_cache_sim && clo_branch_sim) {
-      VG_(fprintf)(fp, "\nevents: Ir I1mr ILmr Dr D1mr DLmr Dw D1mw DLmw "
+      VG_(fprintf)(fp, "\nevents: Ir I1mr ILmr I1u ILu Dr D1mr DLmr D1ru DLru Dw D1mw DLmw D1wu DLwu"
                                   "Bc Bcm Bi Bim\n");
    }
    else if (clo_cache_sim && !clo_branch_sim) {
-      VG_(fprintf)(fp, "\nevents: Ir I1mr ILmr Dr D1mr DLmr Dw D1mw DLmw "
+      VG_(fprintf)(fp, "\nevents: Ir I1mr ILmr I1u ILu Dr D1mr DLmr D1ru DLru Dw D1mw DLmw D1wu DLwu "
                                   "\n");
    }
    else if (!clo_cache_sim && clo_branch_sim) {
@@ -1422,25 +1422,25 @@ static void fprint_CC_table_and_calc_totals(void)
 
       // Print the LineCC
       if (clo_cache_sim && clo_branch_sim) {
-         VG_(fprintf)(fp,  "%d %llu %llu %llu"
-                             " %llu %llu %llu"
-                             " %llu %llu %llu"
+         VG_(fprintf)(fp,  "%d %llu %llu %llu %llu %llu"
+                             " %llu %llu %llu %llu %llu"
+                             " %llu %llu %llu %llu %llu"
                              " %llu %llu %llu %llu\n",
                             lineCC->loc.line,
-                            lineCC->Ir.a, lineCC->Ir.m1, lineCC->Ir.mL,
-                            lineCC->Dr.a, lineCC->Dr.m1, lineCC->Dr.mL,
-                            lineCC->Dw.a, lineCC->Dw.m1, lineCC->Dw.mL,
+                            lineCC->Ir.a, lineCC->Ir.m1, lineCC->Ir.mL, lineCC->Ir.l1_words, lineCC->Ir.llc_words,
+                            lineCC->Dr.a, lineCC->Dr.m1, lineCC->Dr.mL, lineCC->Dr.l1_words, lineCC->Dr.llc_words,
+                            lineCC->Dw.a, lineCC->Dw.m1, lineCC->Dw.mL, lineCC->Dw.l1_words, lineCC->Dw.llc_words,
                             lineCC->Bc.b, lineCC->Bc.mp,
                             lineCC->Bi.b, lineCC->Bi.mp);
       }
       else if (clo_cache_sim && !clo_branch_sim) {
-         VG_(fprintf)(fp,  "%d %llu %llu %llu"
-                             " %llu %llu %llu"
-                             " %llu %llu %llu\n",
+         VG_(fprintf)(fp,  "%d %llu %llu %llu %llu %llu"
+                             " %llu %llu %llu %llu %llu"
+                             " %llu %llu %llu %llu %llu\n",
                             lineCC->loc.line,
-                            lineCC->Ir.a, lineCC->Ir.m1, lineCC->Ir.mL,
-                            lineCC->Dr.a, lineCC->Dr.m1, lineCC->Dr.mL,
-                            lineCC->Dw.a, lineCC->Dw.m1, lineCC->Dw.mL);
+                            lineCC->Ir.a, lineCC->Ir.m1, lineCC->Ir.mL, lineCC->Ir.l1_words, lineCC->Ir.llc_words,
+                            lineCC->Dr.a, lineCC->Dr.m1, lineCC->Dr.mL, lineCC->Dr.l1_words, lineCC->Dr.llc_words,
+                            lineCC->Dw.a, lineCC->Dw.m1, lineCC->Dw.mL, lineCC->Dw.l1_words, lineCC->Dw.llc_words);
       }
       else if (!clo_cache_sim && clo_branch_sim) {
          VG_(fprintf)(fp,  "%d %llu"
@@ -1460,12 +1460,18 @@ static void fprint_CC_table_and_calc_totals(void)
       Ir_total.a  += lineCC->Ir.a;
       Ir_total.m1 += lineCC->Ir.m1;
       Ir_total.mL += lineCC->Ir.mL;
+      Ir_total.l1_words += lineCC->Ir.l1_words;
+      Ir_total.llc_words += lineCC->Ir.llc_words;
       Dr_total.a  += lineCC->Dr.a;
       Dr_total.m1 += lineCC->Dr.m1;
       Dr_total.mL += lineCC->Dr.mL;
+      Dr_total.l1_words += lineCC->Dr.l1_words;
+      Dr_total.llc_words += lineCC->Dr.llc_words;
       Dw_total.a  += lineCC->Dw.a;
       Dw_total.m1 += lineCC->Dw.m1;
       Dw_total.mL += lineCC->Dw.mL;
+      Dw_total.l1_words += lineCC->Dw.l1_words;
+      Dw_total.llc_words += lineCC->Dw.llc_words;
       Bc_total.b  += lineCC->Bc.b;
       Bc_total.mp += lineCC->Bc.mp;
       Bi_total.b  += lineCC->Bi.b;
@@ -1478,24 +1484,24 @@ static void fprint_CC_table_and_calc_totals(void)
    // during traversal.  */
    if (clo_cache_sim && clo_branch_sim) {
       VG_(fprintf)(fp,  "summary:"
-                        " %llu %llu %llu"
-                        " %llu %llu %llu"
-                        " %llu %llu %llu"
+                        " %llu %llu %llu %llu %llu"
+                        " %llu %llu %llu %llu %llu"
+                        " %llu %llu %llu %llu %llu"
                         " %llu %llu %llu %llu\n",
-                        Ir_total.a, Ir_total.m1, Ir_total.mL,
-                        Dr_total.a, Dr_total.m1, Dr_total.mL,
-                        Dw_total.a, Dw_total.m1, Dw_total.mL,
+                        Ir_total.a, Ir_total.m1, Ir_total.mL, Ir_total.l1_words, Ir_total.llc_words,
+                        Dr_total.a, Dr_total.m1, Dr_total.mL, Dr_total.l1_words, Dr_total.llc_words,
+                        Dw_total.a, Dw_total.m1, Dw_total.mL, Dw_total.l1_words, Dw_total.llc_words,
                         Bc_total.b, Bc_total.mp,
                         Bi_total.b, Bi_total.mp);
    }
    else if (clo_cache_sim && !clo_branch_sim) {
       VG_(fprintf)(fp,  "summary:"
-                        " %llu %llu %llu"
-                        " %llu %llu %llu"
-                        " %llu %llu %llu\n",
-                        Ir_total.a, Ir_total.m1, Ir_total.mL,
-                        Dr_total.a, Dr_total.m1, Dr_total.mL,
-                        Dw_total.a, Dw_total.m1, Dw_total.mL);
+                        " %llu %llu %llu %llu %llu"
+                        " %llu %llu %llu %llu %llu"
+                        " %llu %llu %llu %llu %llu\n",
+                        Ir_total.a, Ir_total.m1, Ir_total.mL, Ir_total.l1_words, Ir_total.llc_words,
+                        Dr_total.a, Dr_total.m1, Dr_total.mL, Dr_total.l1_words, Dr_total.llc_words,
+                        Dw_total.a, Dw_total.m1, Dw_total.mL, Dw_total.l1_words, Dw_total.llc_words);
    }
    else if (!clo_cache_sim && clo_branch_sim) {
       VG_(fprintf)(fp,  "summary:"
@@ -1560,7 +1566,9 @@ static void cg_fini(Int exitcode)
    if (clo_cache_sim) {
       VG_(umsg)(fmt, "I1  misses:   ", Ir_total.m1);
       VG_(umsg)(fmt, "LLi misses:   ", Ir_total.mL);
-
+      VG_(umsg)(fmt, "I1  words:    ", Ir_total.l1_words);
+      VG_(umsg)(fmt, "LLi words:    ", Ir_total.llc_words);
+ 
       if (0 == Ir_total.a) Ir_total.a = 1;
       VG_(umsg)("I1  miss rate: %*.2f%%\n", l1,
                 Ir_total.m1 * 100.0 / Ir_total.a);
@@ -1573,6 +1581,8 @@ static void cg_fini(Int exitcode)
       D_total.a  = Dr_total.a  + Dw_total.a;
       D_total.m1 = Dr_total.m1 + Dw_total.m1;
       D_total.mL = Dr_total.mL + Dw_total.mL;
+      D_total.l1_words = Dr_total.l1_words + Dw_total.l1_words;
+      D_total.llc_words = Dr_total.llc_words + Dw_total.llc_words;
 
       /* Make format string, getting width right for numbers */
       VG_(sprintf)(fmt, "%%s %%,%dllu  (%%,%dllu rd   + %%,%dllu wr)\n",
@@ -1580,6 +1590,10 @@ static void cg_fini(Int exitcode)
 
       VG_(umsg)(fmt, "D   refs:     ",
                      D_total.a, Dr_total.a, Dw_total.a);
+      VG_(umsg)(fmt, "D   l1  used: ",
+                     D_total.l1_words, Dr_total.l1_words, Dw_total.l1_words);
+      VG_(umsg)(fmt, "D   llc used: ",
+                     D_total.llc_words, Dr_total.llc_words, Dw_total.llc_words);
       VG_(umsg)(fmt, "D1  misses:   ",
                      D_total.m1, Dr_total.m1, Dw_total.m1);
       VG_(umsg)(fmt, "LLd misses:   ",
