@@ -106,13 +106,14 @@ Int set_used(UWord addr, Int size, Int line_size, UWord* used)
   *used = 0;
   Int offset = addr & (line_size - 1); /* SF line_size must be pow of 2 */
   Int words = line_size / 4;
-  offset /= 4;  /* SF: make it offst of 32 bit words */
-  while (offset < words && size > 0) {
-      *used |= (1 << offset);
-      size -= 4;  /* SF: 32 bit word */
-      offset++;
+  int bits = 0;
+  for (Int w = offset/4; w <= (offset + size -1)/4; w++, bits++) {
+      if (w >= words) {
+        return size - bits * 4 + offset % 4;
+      }
+      *used |= (1 << w);
   }
-  return size;
+  return 0;
 }
 
 /* This attribute forces GCC to inline the function, getting rid of a
