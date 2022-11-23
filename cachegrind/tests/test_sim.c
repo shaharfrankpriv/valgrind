@@ -104,9 +104,79 @@ void test_set_used()
     }
 }
 
+void dump_cache_t2(cache_t2 *c)
+{
+    char tagstr[1024];
+    printf("desc %s assoc %d line_size %d line_size_bits %d sets %d size %d tag_shift %d\n",
+        c->desc_line, c->assoc, c->line_size, c->line_size_bits, c->sets, c->size, c->tag_shift);
+    for (int i = 0; i < c->sets; i++) {
+        int o = 0;
+        const int words = 64 / 4 + 1;
+        char buf[128];
+
+        for (int j = 0; j < c->assoc; j++) {
+            char *s = tobin(c->used[i * c->assoc + j], buf, words);
+            o += sprintf(tagstr + o, "%ld (%s) ", c->tags[i * c->assoc + j], s);
+        }
+        printf("  Set: %d Tags: %s\n", i, tagstr);
+    }
+}
+
+void dump_CacheCC(CacheCC *cc)
+{
+    printf("CacheCC: accesses %d miss1 %d missLL %d words1 %d workdsLL %d\n",
+        cc->a, cc->m1, cc->mL, cc->l1_words, cc->llc_words);
+}
+
+void test_caches() {
+    cache_t I1c = {.assoc = 1, .line_size = 64, .size = 64*2};
+    cache_t D1c = {.assoc = 1, .line_size = 64, .size = 64*2};
+    cache_t LLc = {.assoc = 1, .line_size = 64, .size = 64*5};
+    
+    cachesim_initcaches(I1c, D1c, LLc);
+    sprintf(I1.desc_line, "I1");
+    sprintf(D1.desc_line, "D1");
+    sprintf(LL.desc_line, "LL");
+
+    dump_cache_t2(&I1);
+    dump_cache_t2(&D1);
+    dump_cache_t2(&LL);
+
+    CacheCC ccc = {};
+    printf("## Access 1, 4\n");
+    cachesim_I1_doref_NoX(1, 4, &ccc);
+    dump_cache_t2(&I1);
+    dump_cache_t2(&LL);
+    dump_CacheCC(&ccc);
+
+    printf("## Access 8, 4\n");
+    cachesim_I1_doref_NoX(8, 4, &ccc);
+    dump_cache_t2(&I1);
+    dump_CacheCC(&ccc);
+
+    printf("## Access 32, 4\n");
+    cachesim_I1_doref_NoX(32, 4, &ccc);
+    dump_cache_t2(&I1);
+
+    dump_CacheCC(&ccc);
+
+    printf("## Access 64+32, 4\n");
+    cachesim_I1_doref_NoX(64+32, 4, &ccc);
+    dump_cache_t2(&I1);
+    dump_CacheCC(&ccc);
+
+    printf("## Access 2*64+12, 4\n");
+    cachesim_I1_doref_NoX(2*64+12, 4, &ccc);
+    dump_cache_t2(&I1);
+    dump_CacheCC(&ccc);
+
+    printf("Caches test - success!\n");
+}
+
 int main(int argc, char **argv)
 {
     test_count_bits();
     test_set_used();
+    test_caches();
     return 0;
 }
