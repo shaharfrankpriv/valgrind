@@ -25,8 +25,8 @@ typedef unsigned char UChar;
 #define vg_log2 log2
 #define vg_tool_panic printf
 #define vg_malloc(desc, sz) calloc(1, sz)
-#include "cg_arch.h"
-#include "cg_sim.c"
+#include "../cg_arch.h"
+#include "../cg_sim.c"
 //#include "cg_branchpred.c"
 
 /*------------------------------------------------------------*/
@@ -63,11 +63,11 @@ void test_set_used()
 {
     struct Test
     {
-        UWord a;
-        Int s;
-        Int l;
-        char *b;
-        Int r;
+        UWord a;    // Address
+        Int s;      // Size
+        Int l;      // Cache Line Size
+        char *b;    // Bitmap
+        Int r;      // expected Result
     } tests[] = {
         {0, 4, 64, "1000000000000000", 0},
         {2, 4, 64, "1100000000000000", 0},
@@ -82,6 +82,7 @@ void test_set_used()
         {62, 8, 64, "0000000000000001", 6},
         {56, 10, 64, "0000000000000011", 2},
         {56, 20, 64, "0000000000000011", 12},
+        {}, // end marker
 
     };
     char buf[128];

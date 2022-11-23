@@ -1,0 +1,15 @@
+count bits 0x808 - 2
+count bits 0x7808 - 5
+set used: addr = 0, size = 4, cache_line_sz = 64:  w = 1000000000000000 d = 0
+set used: addr = 2, size = 4, cache_line_sz = 64:  w = 1100000000000000 d = 0
+set used: addr = 0, size = 5, cache_line_sz = 64:  w = 1100000000000000 d = 0
+set used: addr = 32, size = 4, cache_line_sz = 64:  w = 0000000010000000 d = 0
+set used: addr = 32, size = 8, cache_line_sz = 64:  w = 0000000011000000 d = 0
+set used: addr = 32, size = 16, cache_line_sz = 64:  w = 0000000011110000 d = 0
+set used: addr = 32, size = 12, cache_line_sz = 64:  w = 0000000011100000 d = 0
+set used: addr = 60, size = 8, cache_line_sz = 64:  w = 0000000000000001 d = 4
+set used: addr = 62, size = 4, cache_line_sz = 64:  w = 0000000000000001 d = 2
+set used: addr = 62, size = 8, cache_line_sz = 64:  w = 0000000000000001 d = 6
+set used: addr = 62, size = 8, cache_line_sz = 64:  w = 0000000000000001 d = 6
+set used: addr = 56, size = 10, cache_line_sz = 64:  w = 0000000000000011 d = 2
+set used: addr = 56, size = 20, cache_line_sz = 64:  w = 0000000000000011 d = 12

@@ -3,10 +3,14 @@
 I   refs:
 I1  misses:
 LLi misses:
+I1  words:      10,406
+LLi words:       1,367
 I1  miss rate:
 LLi miss rate:
 
 D   refs:
+D   l1  used:   17,472  (12,953 rd   +  4,519 wr)
+D   llc used:    1,981  ( 1,329 rd   +    652 wr)
 D1  misses:
 LLd misses:
 D1  miss rate:

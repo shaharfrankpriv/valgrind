@@ -21,14 +21,17 @@ EXTRA_DIST = \
 	diff.post.exp diff.stderr.exp diff.vgtest \
 	dlclose.vgtest dlclose.stderr.exp dlclose.stdout.exp \
 	notpower2.vgtest notpower2.stderr.exp \
+	test_sim.c test_sim.stdout.exp test_sim.stderr.exp \
 	test.c a.c \
 	wrap5.vgtest wrap5.stderr.exp wrap5.stdout.exp
 
 check_PROGRAMS = \
-	chdir clreq dlclose myprint.so
+	chdir clreq dlclose test_sim myprint.so
 
 AM_CFLAGS   += $(AM_FLAG_M3264_PRI)
 AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
+
+test_sim_LDADD	= -lm
 
 # C ones
 if !VGCONF_OS_IS_FREEBSD
