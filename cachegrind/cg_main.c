@@ -1570,7 +1570,6 @@ static void cg_fini(Int exitcode)
       VG_(umsg)(fmt, "I1  misses:   ", Ir_total.m1);
       VG_(umsg)(fmt, "LLi misses:   ", Ir_total.mL);
       VG_(umsg)(fmt, "I1  avg words:", Ir_total.l1_words);
-      VG_(umsg)(fmt, "LLi avg words:", Ir_total.llc_words);
  
       if (0 == Ir_total.a) Ir_total.a = 1;
       VG_(umsg)("I1  miss rate: %*.2f%%\n", l1,
@@ -1589,7 +1588,7 @@ static void cg_fini(Int exitcode)
       D_total.l1_words = (Dr_total.l1_words + Dw_total.l1_words) / D_total.a;
       Dr_total.l1_words /= Dr_total.a;
       Dw_total.l1_words /= Dw_total.a;
-      
+
       /* Make format string, getting width right for numbers */
       VG_(sprintf)(fmt, "%%s %%,%dllu  (%%,%dllu rd   + %%,%dllu wr)\n",
                         l1, l2, l3);
@@ -1632,6 +1631,7 @@ static void cg_fini(Int exitcode)
       LL_total_mw = Dw_total.mL;
       VG_(umsg)(fmt, "LL misses:    ",
                      LL_total_m, LL_total_mr, LL_total_mw);
+      VG_(umsg)("LL avg words:  %*llu\n", l1, LL_avg_words);
 
       VG_(umsg)("LL miss rate:  %*.1f%% (%*.1f%%     + %*.1f%%  )\n",
                 l1, LL_total_m  * 100.0 / (Ir_total.a + D_total.a),
