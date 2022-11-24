@@ -47,7 +47,7 @@ typedef struct {
    HChar        desc_line[128];  /* large enough */
    UWord*       tags;
    UWord*       used;            /* SF: utilization bitmask per tag, 32bit granularity */
-   Int          util_percent;    /* percent of already accessed words */
+   Int          total_used;    /* percent of already accessed words */
 } cache_t2;
 
 /* By this point, the size/assoc/line_size has been checked. */
@@ -81,7 +81,7 @@ static void cachesim_initcache(cache_t config, cache_t2* c)
       c->tags[i] = ~0;
       c->used[i] = 0;
     }
-    c->util_percent = 0;
+    c->total_used = 0;
 }
 
 /* SF: Brian Kernighan’s Algorithm */
@@ -122,16 +122,15 @@ Int set_used(UWord addr, Int size, Int line_size, UWord* used)
  * lot of indirection around the cache_t2 pointer, if it is known to be
  * constant in the caller (the caller is inlined itself).
  * Without inlining of simulator functions, cachegrind can get 40% slower.
- * SF: return 0 in case of a hit, and the number of words used in the
- * evicted entry in case of a miss.
  */
 __attribute__((always_inline))
 static __inline__
-Int cachesim_setref_evicted_used(cache_t2* c, UInt set_no, UWord tag, UWord u)
+Bool cachesim_setref_is_miss(cache_t2* c, UInt set_no, UWord tag, UWord u)
 {
    int i, j;
    UWord *set, *used;
    UWord prev_used = 0; /* SF: prev used - used if shuffled */
+   int prev_bits = 0, post_bits = 0;
 
    set = &(c->tags[set_no * c->assoc]);
    used = &(c->used[set_no * c->assoc]);
@@ -140,7 +139,10 @@ Int cachesim_setref_evicted_used(cache_t2* c, UInt set_no, UWord tag, UWord u)
    /* common.  We can't unroll any further because it would screw up   */
    /* if we have a direct-mapped (1-way) cache.                        */
    if (tag == set[0]) {
+      prev_bits = count_bits(used[0]);
       used[0] |= u;
+      post_bits = count_bits(used[0]);
+      c->total_used += post_bits - prev_bits;
       return 0;  /* hit */
    }
 
@@ -155,29 +157,31 @@ Int cachesim_setref_evicted_used(cache_t2* c, UInt set_no, UWord tag, UWord u)
          }
          set[0] = tag;
          used[0] = prev_used | u;
+         prev_bits = count_bits(prev_used);
+         post_bits = count_bits(used[0]);
+         c->total_used += post_bits - prev_bits;
 
          return 0;  /* hit */
       }
    }
 
    /* A miss;  install this tag as MRU, shuffle rest down. */
-   int evicted_used = count_bits(used[c->assoc - 1]);
-   if (!evicted_used) {
-     evicted_used = 1;  /* to avoid counting it as a hit */
-   }
+   prev_bits = count_bits(used[c->assoc - 1]);
    for (j = c->assoc - 1; j > 0; j--) {
       set[j] = set[j - 1];
       used[j] = used[j - 1];
    }
    set[0] = tag;
    used[0] = u;
+   post_bits = count_bits(used[0]);
+   c->total_used += post_bits - prev_bits;
 
-   return evicted_used;  /* miss */
+   return 1; /* miss */
 }
 
 __attribute__((always_inline))
 static __inline__
-Int cachesim_ref_evicted_used(cache_t2* c, Addr a, UChar size)
+Bool cachesim_ref_is_miss(cache_t2* c, Addr a, UChar size)
 {
    /* A memory block has the size of a cache line */
    UWord block1 =  a         >> c->line_size_bits;
@@ -199,7 +203,7 @@ Int cachesim_ref_evicted_used(cache_t2* c, Addr a, UChar size)
       if (set_used(a, size, c->line_size, &used) > 0) {
         VG_(tool_panic)("set_used didn't consume the block within one line");
       }
-      return cachesim_setref_evicted_used(c, set1, tag1, used);
+      return cachesim_setref_is_miss(c, set1, tag1, used);
     }
 
    /* Access straddles two lines. */
@@ -217,8 +221,8 @@ Int cachesim_ref_evicted_used(cache_t2* c, Addr a, UChar size)
       set_used(0, left, c->line_size, &used2);
 
       /* always do both, as state is updated as side effect */
-      return (cachesim_setref_evicted_used(c, set1, tag1, used1) +
-              cachesim_setref_evicted_used(c, set2, tag2, used2));
+      return (cachesim_setref_is_miss(c, set1, tag1, used1) |
+              cachesim_setref_is_miss(c, set2, tag2, used2));
    }
    VG_(printf)("addr: %lx  size: %u  blocks: %lu %lu",
                a, size, block1, block2);
@@ -244,16 +248,14 @@ static __inline__
 void cachesim_I1_doref_Gen(Addr a, UChar size, CacheCC* cc)
 {
   cc->a++;  /* access */
-  Int evicted_used = cachesim_ref_evicted_used(&I1, a, size);
-   if (evicted_used > 0) {
+   if (cachesim_ref_is_miss(&I1, a, size)) {
       cc->m1++;
-      cc->l1_words += evicted_used;
-      evicted_used = cachesim_ref_evicted_used(&LL, a, size);
-      if (evicted_used) {
+      if (cachesim_ref_is_miss(&LL, a, size)) {
          cc->mL++;
-         cc->llc_words += evicted_used;
       }
    }
+   cc->l1_words += I1.total_used;
+   cc->llc_words += LL.total_used;
 }
 
 // common special case IrNoX
@@ -268,21 +270,19 @@ void cachesim_I1_doref_NoX(Addr a, UChar size, CacheCC* cc)
    // use block as tag
    UWord used = 0;
    set_used(a, size, I1.line_size, &used);
-   Int evicted_used = cachesim_setref_evicted_used(&I1, I1_set, block, used);
-   if (evicted_used > 0) {
+   if (cachesim_setref_is_miss(&I1, I1_set, block, used)) {
       /* L1 miss */
       cc->m1++;
-      cc->l1_words += evicted_used;
       UInt  LL_set = block & LL.sets_min_1;
       set_used(a, size, LL.line_size, &used);
       // can use block as tag as L1I and LL cache line sizes are equal
-      evicted_used = cachesim_setref_evicted_used(&LL, LL_set, block, used);
-      if (evicted_used > 0) {
+      if (cachesim_setref_is_miss(&LL, LL_set, block, used)) {
          /* LL miss */
          cc->mL++;
-         cc->llc_words += evicted_used;
       }
    }
+   cc->l1_words += I1.total_used;
+   cc->llc_words += LL.total_used;
 }
 
 __attribute__((always_inline))
@@ -290,18 +290,16 @@ static __inline__
 void cachesim_D1_doref(Addr a, UChar size, CacheCC* cc)
 {
    cc->a++;  /* access */
-   Int evicted_used = cachesim_ref_evicted_used(&D1, a, size);
-   if (evicted_used > 0) {
+   if (cachesim_ref_is_miss(&D1, a, size)) {
       /* L1d miss */
       cc->m1++;
-      cc->l1_words += evicted_used;
-      evicted_used = cachesim_ref_evicted_used(&LL, a, size);
-      if (evicted_used > 0) {
+      if (cachesim_ref_is_miss(&LL, a, size)) {
          /* LL miss */
          cc->mL++;
-         cc->llc_words += evicted_used;
       }
    }
+   cc->l1_words += D1.total_used;
+   cc->llc_words += LL.total_used;
 }
 
 /* Check for special case IrNoX. Called at instrumentation time.

@@ -63,11 +63,11 @@ void test_set_used()
 {
     struct Test
     {
-        UWord a;    // Address
-        Int s;      // Size
-        Int l;      // Cache Line Size
-        char *b;    // Bitmap
-        Int r;      // expected Result
+        UWord a; // Address
+        Int s;   // Size
+        Int l;   // Cache Line Size
+        char *b; // Bitmap
+        Int r;   // expected Result
     } tests[] = {
         {0, 4, 64, "1000000000000000", 0},
         {2, 4, 64, "1100000000000000", 0},
@@ -108,13 +108,15 @@ void dump_cache_t2(cache_t2 *c)
 {
     char tagstr[1024];
     printf("desc %s assoc %d line_size %d line_size_bits %d sets %d size %d tag_shift %d\n",
-        c->desc_line, c->assoc, c->line_size, c->line_size_bits, c->sets, c->size, c->tag_shift);
-    for (int i = 0; i < c->sets; i++) {
+           c->desc_line, c->assoc, c->line_size, c->line_size_bits, c->sets, c->size, c->tag_shift);
+    for (int i = 0; i < c->sets; i++)
+    {
         int o = 0;
         const int words = 64 / 4 + 1;
         char buf[128];
 
-        for (int j = 0; j < c->assoc; j++) {
+        for (int j = 0; j < c->assoc; j++)
+        {
             char *s = tobin(c->used[i * c->assoc + j], buf, words);
             o += sprintf(tagstr + o, "%ld (%s) ", c->tags[i * c->assoc + j], s);
         }
@@ -125,38 +127,46 @@ void dump_cache_t2(cache_t2 *c)
 void dump_CacheCC(CacheCC *cc)
 {
     printf("CacheCC: accesses %llu miss1 %llu missLL %llu words1 %llu workdsLL %llu\n",
-        cc->a, cc->m1, cc->mL, cc->l1_words, cc->llc_words);
+           cc->a, cc->m1, cc->mL, cc->l1_words, cc->llc_words);
 }
 
-void test_caches() {
+void test_caches()
+{
     struct Test
     {
-        UWord a;    // Address
-        Int s;      // Size
-        Int eml1;   // expected miss m1
-        Int emll;   // expected miss llc
-        Int ewl1;   // expected used words l1
-        Int ewll;   // expected used words m1
+        char *desc;
+        UWord a;  // Address
+        Int s;    // Size
+        Bool m1;  // expected miss m1
+        Bool mL;  // expected miss llc
+        Int l1w;  // expected used words l1
+        Int llcw; // expected used words m1
     } itests[] = {
-        {.a = 1, .s = 4, .eml1 = 1, .emll = 1, .ewl1 = 1, .ewll = 1},
-        {.a = 8, .s = 4, .eml1 = 1, .emll = 1, .ewl1 = 1, .ewll = 1},
-        {.a = 32, .s = 4, .eml1 = 1, .emll = 1, .ewl1 = 1, .ewll = 1},
-        {.a = 2*64+32, .s = 4, .eml1 = 2, .emll = 2, .ewl1 = 5, .ewll = 2},
-        {.a = 2*64+12, .s = 4, .eml1 = 2, .emll = 2, .ewl1 = 5, .ewll = 2},
-        {.a = 48, .s = 4, .eml1 = 3, .emll = 2, .ewl1 = 7, .ewll = 2},
-        {}
-    };
+        {"first line 0, unaligned word 0+1", .a = 1, .s = 4, .m1 = 1, .mL = 1, .l1w = 2, .llcw = 2},
+        {"line 0 (hit), word 2", .a = 8, .s = 4, .m1 = 0, .mL = 0, .l1w = 3, .llcw = 2},
+        {"line 0 (hit), word 8", .a = 32, .s = 4, .m1 = 0, .mL = 0, .l1w = 4, .llcw = 2},
+        {"line 2 (miss), word 8", .a = 2 * 64 + 32, .s = 4, .m1 = 1, .mL = 1, .l1w = 5, .llcw = 3},
+        {"line 2 (hit), word 3", .a = 2 * 64 + 12, .s = 4, .m1 = 0, .mL = 0, .l1w = 6, .llcw = 3},
+        {"line 0 (hit), word 6 (shuffle MRU)", .a = 48, .s = 4, .m1 = 0, .mL = 0, .l1w = 7, .llcw = 3},
+        {"line 0 (hit), word 6 (revisit word)", .a = 48, .s = 4, .m1 = 0, .mL = 0, .l1w = 7, .llcw = 3},
+        {"line 1 (miss), word 0 (replace LRU)", .a = 64, .s = 4, .m1 = 1, .mL = 1, .l1w = 6, .llcw = 4},
+        {"line 2 (l1 miss, LL hit), word 0 (replace LRU)", .a = 64 * 2, .s = 4, .m1 = 1, .mL = 0, .l1w = 2, .llcw = 5},
+        {}};
 
     struct Test dtests[] = {
-        {.a = 0, .s = 8, .eml1 = 1, .emll = 0, .ewl1 = 1, .ewll = 0},
-        {.a = 60, .s = 8, .eml1 = 2, .emll = 1, .ewl1 = 2, .ewll = 1},
-        {}
-    };
+        {"line 0, word 0+1+2 (d1 miss, ll hit)", .a = 0, .s = 12, .m1 = 1, .mL = 0, .l1w = 3, .llcw = 6},
+        {"cross line 0+1, last+first words", .a = 60, .s = 8, .m1 = 1, .mL = 0, .l1w = 5, .llcw = 7},
+        {}};
 
-    cache_t I1c = {.assoc = 1, .line_size = 64, .size = 64*2};
-    cache_t D1c = {.assoc = 1, .line_size = 64, .size = 64*2};
-    cache_t LLc = {.assoc = 2, .line_size = 64, .size = 64*4};
-    
+    struct Test igtests[] = {
+        {"line 1+2, words first + last (i1 miss, ll hit)", .a = 64+60, .s = 8, .m1 = 0, .mL = 0, .l1w = 3, .llcw = 7},
+        {"cross line 0+1, 2 last+first words", .a = 56, .s = 12, .m1 = 1, .mL = 0, .l1w = 3, .llcw = 8},
+        {}};
+
+    cache_t I1c = {.assoc = 2, .line_size = 64, .size = 64 * 2};
+    cache_t D1c = {.assoc = 2, .line_size = 64, .size = 64 * 2};
+    cache_t LLc = {.assoc = 2, .line_size = 64, .size = 64 * 4};
+
     cachesim_initcaches(I1c, D1c, LLc);
     sprintf(I1.desc_line, "I1");
     sprintf(D1.desc_line, "D1");
@@ -166,34 +176,57 @@ void test_caches() {
     dump_cache_t2(&D1);
     dump_cache_t2(&LL);
 
-    CacheCC icc = {};
-    for (struct Test *t = itests; t->s; t++) {
-        printf("## I1: Access %lu, size %d\n", t->a, t->s);
+    for (struct Test *t = itests; t->s; t++)
+    {
+        CacheCC icc = {};
+        printf("## I1: %s: Access %lu, size %d\n", t->desc, t->a, t->s);
         cachesim_I1_doref_NoX(t->a, t->s, &icc);
         dump_cache_t2(&I1);
         dump_cache_t2(&LL);
         dump_CacheCC(&icc);
-        if (icc.m1 != t->eml1 || icc.mL != t->emll ||
-            icc.l1_words != t->ewl1 || icc.llc_words != t->ewll) {
-              printf("Failed: I CacheLine stats != eml1 %d, emll %d, ewl1 %d, ewll %d\n",
-                        t->eml1, t->emll, t->ewl1, t->emll);
-                exit(1);
-            }
+
+        if (icc.m1 != t->m1 || icc.mL != t->mL ||
+            icc.l1_words != t->l1w || icc.llc_words != t->llcw)
+        {
+            printf("Failed: I CacheLine stats != m1 %d, mL %d, l1w %d, llcw %d\n",
+                   t->m1, t->mL, t->l1w, t->llcw);
+            exit(1);
+        }
     }
 
-    CacheCC dcc = {};
-    for (struct Test *t = dtests; t->s; t++) {
-        printf("## D1: Access %lu, size %d\n", t->a, t->s);
+    for (struct Test *t = dtests; t->s; t++)
+    {
+        CacheCC dcc = {};
+        printf("## D1: %s: Access %lu, size %d\n", t->desc, t->a, t->s);
         cachesim_D1_doref(t->a, t->s, &dcc);
         dump_cache_t2(&D1);
         dump_cache_t2(&LL);
         dump_CacheCC(&dcc);
-        if (dcc.m1 != t->eml1 || dcc.mL != t->emll ||
-            dcc.l1_words != t->ewl1 || dcc.llc_words != t->ewll) {
-              printf("Failed: D CacheLine stats != eml1 %d, emll %d, ewl1 %d, ewll %d\n",
-                        t->eml1, t->emll, t->ewl1, t->emll);
-                exit(1);
-            }
+        if (dcc.m1 != t->m1 || dcc.mL != t->mL ||
+            dcc.l1_words != t->l1w || dcc.llc_words != t->llcw)
+        {
+            printf("Failed: D CacheLine stats != m1 %d, mL %d, l1w %d, llcw %d\n",
+                   t->m1, t->mL, t->l1w, t->llcw);
+            exit(1);
+        }
+    }
+
+    for (struct Test *t = igtests; t->s; t++)
+    {
+        CacheCC icc = {};
+        printf("## I1 (gen): %s: Access %lu, size %d\n", t->desc, t->a, t->s);
+        cachesim_I1_doref_Gen(t->a, t->s, &icc);
+        dump_cache_t2(&I1);
+        dump_cache_t2(&LL);
+        dump_CacheCC(&icc);
+
+        if (icc.m1 != t->m1 || icc.mL != t->mL ||
+            icc.l1_words != t->l1w || icc.llc_words != t->llcw)
+        {
+            printf("Failed: I (gen) CacheLine stats != m1 %d, mL %d, l1w %d, llcw %d\n",
+                   t->m1, t->mL, t->l1w, t->llcw);
+            exit(1);
+        }
     }
 
     printf("Caches test - success!\n");
