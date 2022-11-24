@@ -44,9 +44,10 @@ typedef struct {
    Int          sets_min_1;
    Int          line_size_bits;
    Int          tag_shift;
-   HChar        desc_line[128];         /* large enough */
+   HChar        desc_line[128];  /* large enough */
    UWord*       tags;
-   UWord*       used;   /* SF: utilization bitmask per tag, 32bit granularity */
+   UWord*       used;            /* SF: utilization bitmask per tag, 32bit granularity */
+   Int          util_percent;    /* percent of already accessed words */
 } cache_t2;
 
 /* By this point, the size/assoc/line_size has been checked. */
@@ -80,6 +81,7 @@ static void cachesim_initcache(cache_t config, cache_t2* c)
       c->tags[i] = ~0;
       c->used[i] = 0;
     }
+    c->util_percent = 0;
 }
 
 /* SF: Brian Kernighan’s Algorithm */
@@ -212,7 +214,7 @@ Int cachesim_ref_evicted_used(cache_t2* c, Addr a, UChar size)
       /* note that set_used may return > 0 if more then two lines are accessed,
        * but we ignore such cases.
        */
-      set_used(a+size, left, c->line_size, &used2);
+      set_used(0, left, c->line_size, &used2);
 
       /* always do both, as state is updated as side effect */
       return (cachesim_setref_evicted_used(c, set1, tag1, used1) +
