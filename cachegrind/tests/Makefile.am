@@ -10,6 +10,10 @@ DIST_SUBDIRS = x86 .
 
 dist_noinst_SCRIPTS = filter_stderr filter_cachesim_discards
 
+noinst_HEADERS = \
+	../cg_arch.h \
+	../cg_sim.c
+
 # Note that test.c and a.c are not compiled.
 # They just serve as input for cg_annotate in ann1 and ann2.
 EXTRA_DIST = \
@@ -32,6 +36,7 @@ AM_CFLAGS   += $(AM_FLAG_M3264_PRI)
 AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
 
 test_sim_LDADD	= -lm
+test_sim_DEPENDENCIES = ../cg_arch.h ../cg_sim.c
 
 # C ones
 if !VGCONF_OS_IS_FREEBSD

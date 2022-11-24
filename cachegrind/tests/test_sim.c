@@ -124,14 +124,14 @@ void dump_cache_t2(cache_t2 *c)
 
 void dump_CacheCC(CacheCC *cc)
 {
-    printf("CacheCC: accesses %d miss1 %d missLL %d words1 %d workdsLL %d\n",
+    printf("CacheCC: accesses %llu miss1 %llu missLL %llu words1 %llu workdsLL %llu\n",
         cc->a, cc->m1, cc->mL, cc->l1_words, cc->llc_words);
 }
 
 void test_caches() {
     cache_t I1c = {.assoc = 1, .line_size = 64, .size = 64*2};
     cache_t D1c = {.assoc = 1, .line_size = 64, .size = 64*2};
-    cache_t LLc = {.assoc = 1, .line_size = 64, .size = 64*5};
+    cache_t LLc = {.assoc = 2, .line_size = 64, .size = 64*4};
     
     cachesim_initcaches(I1c, D1c, LLc);
     sprintf(I1.desc_line, "I1");
@@ -152,22 +152,31 @@ void test_caches() {
     printf("## Access 8, 4\n");
     cachesim_I1_doref_NoX(8, 4, &ccc);
     dump_cache_t2(&I1);
+    dump_cache_t2(&LL);
     dump_CacheCC(&ccc);
 
     printf("## Access 32, 4\n");
     cachesim_I1_doref_NoX(32, 4, &ccc);
     dump_cache_t2(&I1);
-
+    dump_cache_t2(&LL);
     dump_CacheCC(&ccc);
 
-    printf("## Access 64+32, 4\n");
-    cachesim_I1_doref_NoX(64+32, 4, &ccc);
+    printf("## Access 2*64+32, 4\n");
+    cachesim_I1_doref_NoX(2*64+32, 4, &ccc);
     dump_cache_t2(&I1);
+    dump_cache_t2(&LL);
     dump_CacheCC(&ccc);
 
     printf("## Access 2*64+12, 4\n");
     cachesim_I1_doref_NoX(2*64+12, 4, &ccc);
     dump_cache_t2(&I1);
+    dump_cache_t2(&LL);
+    dump_CacheCC(&ccc);
+
+    printf("## Access 48, 4\n");
+    cachesim_I1_doref_NoX(48, 4, &ccc);
+    dump_cache_t2(&I1);
+    dump_cache_t2(&LL);
     dump_CacheCC(&ccc);
 
     printf("Caches test - success!\n");

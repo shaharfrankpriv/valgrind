@@ -77,7 +77,7 @@ static void cachesim_initcache(cache_t config, cache_t2* c)
                          sizeof(UWord) * c->sets * c->assoc);
 
    for (i = 0; i < c->sets * c->assoc; i++) {
-      c->tags[i] = 0;
+      c->tags[i] = ~0;
       c->used[i] = 0;
     }
 }
