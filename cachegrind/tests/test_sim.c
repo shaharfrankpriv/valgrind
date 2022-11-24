@@ -129,6 +129,30 @@ void dump_CacheCC(CacheCC *cc)
 }
 
 void test_caches() {
+    struct Test
+    {
+        UWord a;    // Address
+        Int s;      // Size
+        Int eml1;   // expected miss m1
+        Int emll;   // expected miss llc
+        Int ewl1;   // expected used words l1
+        Int ewll;   // expected used words m1
+    } itests[] = {
+        {.a = 1, .s = 4, .eml1 = 1, .emll = 1, .ewl1 = 1, .ewll = 1},
+        {.a = 8, .s = 4, .eml1 = 1, .emll = 1, .ewl1 = 1, .ewll = 1},
+        {.a = 32, .s = 4, .eml1 = 1, .emll = 1, .ewl1 = 1, .ewll = 1},
+        {.a = 2*64+32, .s = 4, .eml1 = 2, .emll = 2, .ewl1 = 5, .ewll = 2},
+        {.a = 2*64+12, .s = 4, .eml1 = 2, .emll = 2, .ewl1 = 5, .ewll = 2},
+        {.a = 48, .s = 4, .eml1 = 3, .emll = 2, .ewl1 = 7, .ewll = 2},
+        {}
+    };
+
+    struct Test dtests[] = {
+        {.a = 0, .s = 8, .eml1 = 1, .emll = 0, .ewl1 = 1, .ewll = 0},
+        {.a = 60, .s = 8, .eml1 = 2, .emll = 1, .ewl1 = 2, .ewll = 1},
+        {}
+    };
+
     cache_t I1c = {.assoc = 1, .line_size = 64, .size = 64*2};
     cache_t D1c = {.assoc = 1, .line_size = 64, .size = 64*2};
     cache_t LLc = {.assoc = 2, .line_size = 64, .size = 64*4};
@@ -142,42 +166,35 @@ void test_caches() {
     dump_cache_t2(&D1);
     dump_cache_t2(&LL);
 
-    CacheCC ccc = {};
-    printf("## Access 1, 4\n");
-    cachesim_I1_doref_NoX(1, 4, &ccc);
-    dump_cache_t2(&I1);
-    dump_cache_t2(&LL);
-    dump_CacheCC(&ccc);
+    CacheCC icc = {};
+    for (struct Test *t = itests; t->s; t++) {
+        printf("## I1: Access %lu, size %d\n", t->a, t->s);
+        cachesim_I1_doref_NoX(t->a, t->s, &icc);
+        dump_cache_t2(&I1);
+        dump_cache_t2(&LL);
+        dump_CacheCC(&icc);
+        if (icc.m1 != t->eml1 || icc.mL != t->emll ||
+            icc.l1_words != t->ewl1 || icc.llc_words != t->ewll) {
+              printf("Failed: I CacheLine stats != eml1 %d, emll %d, ewl1 %d, ewll %d\n",
+                        t->eml1, t->emll, t->ewl1, t->emll);
+                exit(1);
+            }
+    }
 
-    printf("## Access 8, 4\n");
-    cachesim_I1_doref_NoX(8, 4, &ccc);
-    dump_cache_t2(&I1);
-    dump_cache_t2(&LL);
-    dump_CacheCC(&ccc);
-
-    printf("## Access 32, 4\n");
-    cachesim_I1_doref_NoX(32, 4, &ccc);
-    dump_cache_t2(&I1);
-    dump_cache_t2(&LL);
-    dump_CacheCC(&ccc);
-
-    printf("## Access 2*64+32, 4\n");
-    cachesim_I1_doref_NoX(2*64+32, 4, &ccc);
-    dump_cache_t2(&I1);
-    dump_cache_t2(&LL);
-    dump_CacheCC(&ccc);
-
-    printf("## Access 2*64+12, 4\n");
-    cachesim_I1_doref_NoX(2*64+12, 4, &ccc);
-    dump_cache_t2(&I1);
-    dump_cache_t2(&LL);
-    dump_CacheCC(&ccc);
-
-    printf("## Access 48, 4\n");
-    cachesim_I1_doref_NoX(48, 4, &ccc);
-    dump_cache_t2(&I1);
-    dump_cache_t2(&LL);
-    dump_CacheCC(&ccc);
+    CacheCC dcc = {};
+    for (struct Test *t = dtests; t->s; t++) {
+        printf("## D1: Access %lu, size %d\n", t->a, t->s);
+        cachesim_D1_doref(t->a, t->s, &dcc);
+        dump_cache_t2(&D1);
+        dump_cache_t2(&LL);
+        dump_CacheCC(&dcc);
+        if (dcc.m1 != t->eml1 || dcc.mL != t->emll ||
+            dcc.l1_words != t->ewl1 || dcc.llc_words != t->ewll) {
+              printf("Failed: D CacheLine stats != eml1 %d, emll %d, ewl1 %d, ewll %d\n",
+                        t->eml1, t->emll, t->ewl1, t->emll);
+                exit(1);
+            }
+    }
 
     printf("Caches test - success!\n");
 }
