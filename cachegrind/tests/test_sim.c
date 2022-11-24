@@ -33,30 +33,57 @@ typedef unsigned char UChar;
 /*--- Constants                                            ---*/
 /*------------------------------------------------------------*/
 
-/* Set to 1 for very verbose debugging */
-#define DEBUG_CG 1
+#include <stdio.h>
+#include <stdarg.h>
+
+void Panic(const char *fmt, ...)
+{
+    char buffer[4096];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    fprintf(stderr, "Panic: %s\n", buffer);
+    exit(1);
+}
 
 char *tobin(UWord w, char *buf, int n)
 {
     const int bits = sizeof(w) * 8;
     int e = bits > n - 1 ? n - 1 : bits;
     int i;
-    // printf("n %d bits %d e %d\n", n, bits, e);
     for (i = 0; i < e; i++)
     {
         buf[i] = ((1 << i) & w) ? '1' : '0';
     }
     buf[i] = 0;
-    // printf("n %d bits %d e %d i %d buf %s\n", n, bits, e, i, buf);
     return buf;
 }
 
 void test_count_bits()
 {
-    UInt u = 0x808;
-    printf("count bits 0x%x - %d\n", u, count_bits(u));
-    u |= 0x7000;
-    printf("count bits 0x%x - %d\n", u, count_bits(u));
+    struct Test {
+        UInt u;
+        Int bits;
+    } tests [] = {
+        {0x808, 2},
+        {0x7808, 5},
+        {0xffff, 16},
+        {~0, 32},
+        {0, 0},
+        {0, -1}
+    };
+
+    printf("*** count_bits() test...\n");
+
+    for (struct Test *t = tests; t->bits >= 0; t++) {
+        int c = count_bits(t->u);
+        printf("count bits 0x%x - %d\n", t->u, c);
+        if (c != t->bits) {
+            Panic("Test count_bits: u %u expected %d bits, got %d", t->u, t->bits, c);
+        }
+    }
+    printf("*** count_bits() - OK.\n");
 }
 
 void test_set_used()
@@ -89,6 +116,8 @@ void test_set_used()
     UWord w;
     Int d;
     const int words = 64 / 4 + 1;
+
+    printf("*** set_used() test...\n");
     for (int i = 0; tests[i].b; i++)
     {
         struct Test *t = tests + i;
@@ -96,12 +125,11 @@ void test_set_used()
         char *s = tobin(w, buf, words);
         printf("set used: addr = %lu, size = %d, cache_line_sz = %d:  w = %s d = %d\n",
                t->a, t->s, t->l, s, d);
-        if (strncmp(t->b, s, sizeof(buf)))
-        {
-            printf("Failed: expected %s got %s\n", t->b, s);
-            exit(1);
+        if (strncmp(t->b, s, sizeof(buf))) {
+            Panic("Failed: expected %s got %s", t->b, s);
         }
     }
+    printf("*** set_used() - OK.\n");
 }
 
 void dump_cache_t2(cache_t2 *c)
@@ -167,6 +195,8 @@ void test_caches()
     cache_t D1c = {.assoc = 2, .line_size = 64, .size = 64 * 2};
     cache_t LLc = {.assoc = 2, .line_size = 64, .size = 64 * 4};
 
+    printf("*** Caches test...\n");
+
     cachesim_initcaches(I1c, D1c, LLc);
     sprintf(I1.desc_line, "I1");
     sprintf(D1.desc_line, "D1");
@@ -188,9 +218,8 @@ void test_caches()
         if (icc.m1 != t->m1 || icc.mL != t->mL ||
             icc.l1_words != t->l1w || icc.llc_words != t->llcw)
         {
-            printf("Failed: I CacheLine stats != m1 %d, mL %d, l1w %d, llcw %d\n",
+            Panic("I CacheLine stats != m1 %d, mL %d, l1w %d, llcw %d",
                    t->m1, t->mL, t->l1w, t->llcw);
-            exit(1);
         }
     }
 
@@ -205,9 +234,8 @@ void test_caches()
         if (dcc.m1 != t->m1 || dcc.mL != t->mL ||
             dcc.l1_words != t->l1w || dcc.llc_words != t->llcw)
         {
-            printf("Failed: D CacheLine stats != m1 %d, mL %d, l1w %d, llcw %d\n",
+            Panic("D CacheLine stats != m1 %d, mL %d, l1w %d, llcw %d",
                    t->m1, t->mL, t->l1w, t->llcw);
-            exit(1);
         }
     }
 
@@ -223,13 +251,50 @@ void test_caches()
         if (icc.m1 != t->m1 || icc.mL != t->mL ||
             icc.l1_words != t->l1w || icc.llc_words != t->llcw)
         {
-            printf("Failed: I (gen) CacheLine stats != m1 %d, mL %d, l1w %d, llcw %d\n",
+            Panic("I (gen) CacheLine stats != m1 %d, mL %d, l1w %d, llcw %d",
                    t->m1, t->mL, t->l1w, t->llcw);
-            exit(1);
         }
     }
 
-    printf("Caches test - success!\n");
+    printf("*** Caches test - OK.\n");
+}
+
+void test_word_usage()
+{
+    cache_t I1c = {.assoc = 2, .line_size = 64, .size = 64 * 128};
+    cache_t D1c = {.assoc = 2, .line_size = 64, .size = 64 * 2};
+    cache_t LLc = {.assoc = 2, .line_size = 64, .size = 64 * 128};
+
+    cachesim_initcaches(I1c, D1c, LLc);
+    sprintf(I1.desc_line, "I1");
+    sprintf(D1.desc_line, "D1");
+    sprintf(LL.desc_line, "LL");
+
+    printf("*** Check word usage...\n");
+    CacheCC icc = {};
+    for (int i = 0; i < I1c.size * 64; i+= 8) {
+        //printf("## I1 (gen): Access even words %d, size %d\n", i, 4);
+        cachesim_I1_doref_Gen(i, 4, &icc);
+    }
+    dump_CacheCC(&icc);
+    /* avg of l1 will not be %50 as each new cache line starts empty (1 words) */
+    float avg_usage_l1 = (icc.l1_words * 1.0/ icc.a) * 4 * 100/ I1c.size;
+    float avg_usage_llc = (icc.llc_words * 1.0/ icc.a) * 4 * 100/ LLc.size;
+    printf("## I1 (gen): L1 Average usage: %.2f LL Average usage: %.2f\n", avg_usage_l1, avg_usage_llc);
+    if (avg_usage_l1 < 49 || avg_usage_l1 > 50) {
+        Panic("test_word_usage: expected usage percent %%49-50 got %%%.2f\n", avg_usage_l1);
+    }
+
+    CacheCC ccc = {};
+    cachesim_I1_doref_Gen(0, 4, &ccc);
+    int even = I1c.size / 2 / 4;
+    int even_line = 64 / 4/ 2;
+    if (ccc.l1_words < even - even_line || ccc.l1_words > even) {
+        Panic("test_word_usage: expected even words %d-%d found %llu\n",
+            even-even_line, even, ccc.l1_words);
+    }
+    dump_CacheCC(&ccc);
+    printf("*** Check word usage - OK.\n");
 }
 
 int main(int argc, char **argv)
@@ -237,5 +302,6 @@ int main(int argc, char **argv)
     test_count_bits();
     test_set_used();
     test_caches();
+    test_word_usage();
     return 0;
 }
