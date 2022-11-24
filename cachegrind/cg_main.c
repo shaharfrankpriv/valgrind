@@ -1480,13 +1480,6 @@ static void fprint_CC_table_and_calc_totals(void)
       distinct_lines++;
    }
 
-   Ir_total.l1_words /= Ir_total.a;    /* avg */
-   Ir_total.llc_words /= Ir_total.a;    /* avg */
-   Dr_total.l1_words /= Dr_total.a;    /* avg */
-   Dr_total.llc_words /= Dr_total.a;    /* avg */
-   Dw_total.l1_words /= Dw_total.a;    /* avg */
-   Dw_total.llc_words /= Dw_total.a;    /* avg */
-
    // Summary stats must come after rest of table, since we calculate them
    // during traversal.  */
    if (clo_cache_sim && clo_branch_sim) {
@@ -1545,7 +1538,7 @@ static void cg_fini(Int exitcode)
    CacheCC  D_total;
    BranchCC B_total;
    ULong LL_total_m, LL_total_mr, LL_total_mw,
-         LL_total, LL_total_r, LL_total_w;
+         LL_total, LL_total_r, LL_total_w, LL_avg_words;
    Int l1, l2, l3;
 
    fprint_CC_table_and_calc_totals();
@@ -1568,23 +1561,24 @@ static void cg_fini(Int exitcode)
    /* Always print this */
    VG_(umsg)(fmt, "I   refs:     ", Ir_total.a);
 
+   Ir_total.l1_words /= Ir_total.a;    /* avg */
+   Ir_total.llc_words /= Ir_total.a;    /* avg */
+
    /* If cache profiling is enabled, show D access numbers and all
       miss numbers */
    if (clo_cache_sim) {
       VG_(umsg)(fmt, "I1  misses:   ", Ir_total.m1);
       VG_(umsg)(fmt, "LLi misses:   ", Ir_total.mL);
-      VG_(umsg)(fmt, "I1  avg words:    ", Ir_total.l1_words);
-      VG_(umsg)(fmt, "LLi avg words:    ", Ir_total.llc_words);
+      VG_(umsg)(fmt, "I1  avg words:", Ir_total.l1_words);
+      VG_(umsg)(fmt, "LLi avg words:", Ir_total.llc_words);
  
       if (0 == Ir_total.a) Ir_total.a = 1;
       VG_(umsg)("I1  miss rate: %*.2f%%\n", l1,
                 Ir_total.m1 * 100.0 / Ir_total.a);
       VG_(umsg)("LLi miss rate: %*.2f%%\n", l1,
                 Ir_total.mL * 100.0 / Ir_total.a);
-      VG_(umsg)("I1 words ratio: %*.2f%%\n", l1,
+      VG_(umsg)("I1 avg usage:  %*.2f%%\n", l1,
                 Ir_total.l1_words * 4 * 100.0 / I1.size);
-      VG_(umsg)("LLi words ratio: %*.2f%%\n", l1,
-                Ir_total.llc_words * 4 * 100.0 / I1.size);
       VG_(umsg)("\n");
 
       /* D cache results.  Use the D_refs.rd and D_refs.wr values to
@@ -1592,19 +1586,18 @@ static void cg_fini(Int exitcode)
       D_total.a  = Dr_total.a  + Dw_total.a;
       D_total.m1 = Dr_total.m1 + Dw_total.m1;
       D_total.mL = Dr_total.mL + Dw_total.mL;
-      D_total.l1_words = (Dr_total.l1_words + Dw_total.l1_words) / 2;
-      D_total.llc_words = (Dr_total.llc_words + Dw_total.llc_words) / 2;
-
+      D_total.l1_words = (Dr_total.l1_words + Dw_total.l1_words) / D_total.a;
+      Dr_total.l1_words /= Dr_total.a;
+      Dw_total.l1_words /= Dw_total.a;
+      
       /* Make format string, getting width right for numbers */
       VG_(sprintf)(fmt, "%%s %%,%dllu  (%%,%dllu rd   + %%,%dllu wr)\n",
                         l1, l2, l3);
 
       VG_(umsg)(fmt, "D   refs:     ",
                      D_total.a, Dr_total.a, Dw_total.a);
-      VG_(umsg)(fmt, "D l1 avg words: ",
+      VG_(umsg)(fmt, "D1 avg words: ",
                      D_total.l1_words, Dr_total.l1_words, Dw_total.l1_words);
-      VG_(umsg)(fmt, "D llc avg words: ",
-                     D_total.llc_words, Dr_total.llc_words, Dw_total.llc_words);
       VG_(umsg)(fmt, "D1  misses:   ",
                      D_total.m1, Dr_total.m1, Dw_total.m1);
       VG_(umsg)(fmt, "LLd misses:   ",
@@ -1621,6 +1614,8 @@ static void cg_fini(Int exitcode)
                 l1, D_total.mL  * 100.0 / D_total.a,
                 l2, Dr_total.mL * 100.0 / Dr_total.a,
                 l3, Dw_total.mL * 100.0 / Dw_total.a);
+      VG_(umsg)("D1 avg usage:  %*.2f%%\n", l1,
+                D_total.l1_words * 4 * 100.0 / D1.size);
       VG_(umsg)("\n");
 
       /* LL overall results */
@@ -1628,6 +1623,7 @@ static void cg_fini(Int exitcode)
       LL_total   = Dr_total.m1 + Dw_total.m1 + Ir_total.m1;
       LL_total_r = Dr_total.m1 + Ir_total.m1;
       LL_total_w = Dw_total.m1;
+      LL_avg_words = (Dr_total.llc_words + Dw_total.llc_words + Ir_total.llc_words) / LL_total;
       VG_(umsg)(fmt, "LL refs:      ",
                      LL_total, LL_total_r, LL_total_w);
 
@@ -1641,6 +1637,12 @@ static void cg_fini(Int exitcode)
                 l1, LL_total_m  * 100.0 / (Ir_total.a + D_total.a),
                 l2, LL_total_mr * 100.0 / (Ir_total.a + Dr_total.a),
                 l3, LL_total_mw * 100.0 / Dw_total.a);
+      VG_(umsg)("LL local miss: %*.1f%% (%*.1f%%     + %*.1f%%  )\n",
+                l1, LL_total_m  * 100.0 / LL_total,
+                l2, LL_total_mr * 100.0 / LL_total_r,
+                l3, LL_total_mw * 100.0 / LL_total_w);
+      VG_(umsg)("LL avg usage:  %*.2f%%\n", l1,
+               LL_avg_words * 4 * 100.0 / LL.size);
    }
 
    /* If branch profiling is enabled, show branch overall results. */
