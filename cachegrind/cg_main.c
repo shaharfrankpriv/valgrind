@@ -260,12 +260,15 @@ static LineCC* get_lineCC(Addr origAddr)
       lineCC->Ir.a     = 0;
       lineCC->Ir.m1    = 0;
       lineCC->Ir.mL    = 0;
+      lineCC->Ir.l1_words = lineCC->Ir.llc_words = 0;
       lineCC->Dr.a     = 0;
       lineCC->Dr.m1    = 0;
       lineCC->Dr.mL    = 0;
+      lineCC->Dr.l1_words = lineCC->Dr.llc_words = 0;
       lineCC->Dw.a     = 0;
       lineCC->Dw.m1    = 0;
       lineCC->Dw.mL    = 0;
+      lineCC->Dw.l1_words = lineCC->Dw.llc_words = 0;
       lineCC->Bc.b     = 0;
       lineCC->Bc.mp    = 0;
       lineCC->Bi.b     = 0;
@@ -1538,7 +1541,8 @@ static void cg_fini(Int exitcode)
    CacheCC  D_total;
    BranchCC B_total;
    ULong LL_total_m, LL_total_mr, LL_total_mw,
-         LL_total, LL_total_r, LL_total_w, LL_avg_words;
+         LL_total, LL_total_r, LL_total_w;
+   Double LL_avg_words;
    Int l1, l2, l3;
 
    fprint_CC_table_and_calc_totals();
@@ -1562,7 +1566,6 @@ static void cg_fini(Int exitcode)
    VG_(umsg)(fmt, "I   refs:     ", Ir_total.a);
 
    Ir_total.l1_words /= Ir_total.a;    /* avg */
-   Ir_total.llc_words /= Ir_total.a;    /* avg */
 
    /* If cache profiling is enabled, show D access numbers and all
       miss numbers */
@@ -1622,16 +1625,21 @@ static void cg_fini(Int exitcode)
       LL_total   = Dr_total.m1 + Dw_total.m1 + Ir_total.m1;
       LL_total_r = Dr_total.m1 + Ir_total.m1;
       LL_total_w = Dw_total.m1;
-      LL_avg_words = (Dr_total.llc_words + Dw_total.llc_words + Ir_total.llc_words) / LL_total;
-      VG_(umsg)(fmt, "LL refs:      ",
+      LL_avg_words = (Dr_total.llc_words + Dw_total.llc_words + Ir_total.llc_words * 1.0) / LL_total;
+      VG_(umsg)(fmt, "LL-refs:      ",
                      LL_total, LL_total_r, LL_total_w);
 
       LL_total_m  = Dr_total.mL + Dw_total.mL + Ir_total.mL;
       LL_total_mr = Dr_total.mL + Ir_total.mL;
       LL_total_mw = Dw_total.mL;
+      VG_(umsg)("Ir %llu Dr %llu Dw %llu\n", Ir_total.llc_words, Dr_total.llc_words, Dw_total.llc_words);
+      VG_(umsg)("LL avg words:  %*.1f  (D %llu  +  I %llu   )\n",
+                l1, LL_avg_words,
+                (Dr_total.llc_words + Dw_total.llc_words),
+                Ir_total.llc_words);
       VG_(umsg)(fmt, "LL misses:    ",
                      LL_total_m, LL_total_mr, LL_total_mw);
-      VG_(umsg)("LL avg words:  %*llu\n", l1, LL_avg_words);
+      VG_(umsg)("LL avg words: %.1f %llu %llu\n", LL_avg_words, Dr_total.llc_words + Dw_total.llc_words, Ir_total.llc_words);
 
       VG_(umsg)("LL miss rate:  %*.1f%% (%*.1f%%     + %*.1f%%  )\n",
                 l1, LL_total_m  * 100.0 / (Ir_total.a + D_total.a),

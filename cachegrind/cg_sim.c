@@ -253,9 +253,11 @@ void cachesim_I1_doref_Gen(Addr a, UChar size, CacheCC* cc)
       if (cachesim_ref_is_miss(&LL, a, size)) {
          cc->mL++;
       }
+      cc->llc_words += LL.total_used;
+      VG_(umsg)("cachesim_I1_doref_Gen: MISS: I1 used %d LL used %d\n", I1.total_used, LL.total_used);
    }
    cc->l1_words += I1.total_used;
-   cc->llc_words += LL.total_used;
+   //VG_(umsg)("cachesim_I1_doref_Gen: I1 used %d LL used %d\n", I1.total_used, LL.total_used);
 }
 
 // common special case IrNoX
@@ -280,9 +282,11 @@ void cachesim_I1_doref_NoX(Addr a, UChar size, CacheCC* cc)
          /* LL miss */
          cc->mL++;
       }
+      cc->llc_words += LL.total_used;
+      VG_(umsg)("cachesim_I1_doref_NoX: MISS I1 used %d LL used %d\n", I1.total_used, LL.total_used);
    }
+   //VG_(umsg)("cachesim_I1_doref_NoX: I1 used %d LL used %d\n", I1.total_used, LL.total_used);
    cc->l1_words += I1.total_used;
-   cc->llc_words += LL.total_used;
 }
 
 __attribute__((always_inline))
@@ -297,9 +301,11 @@ void cachesim_D1_doref(Addr a, UChar size, CacheCC* cc)
          /* LL miss */
          cc->mL++;
       }
+      cc->llc_words += LL.total_used;
+      VG_(umsg)("cachesim_D1_doref: MISS D1 used %d LL used %d\n", D1.total_used, LL.total_used);
    }
+   //VG_(umsg)("cachesim_D1_doref: D1 used %d LL used %d\n", D1.total_used, LL.total_used);
    cc->l1_words += D1.total_used;
-   cc->llc_words += LL.total_used;
 }
 
 /* Check for special case IrNoX. Called at instrumentation time.

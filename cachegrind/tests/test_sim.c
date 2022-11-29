@@ -22,6 +22,7 @@ typedef unsigned char UChar;
 #define VG_(x) vg_##x
 #define vg_sprintf sprintf
 #define vg_printf printf
+#define vg_umsg printf
 #define vg_log2 log2
 #define vg_tool_panic printf
 #define vg_malloc(desc, sz) calloc(1, sz)
@@ -297,11 +298,37 @@ void test_word_usage()
     printf("*** Check word usage - OK.\n");
 }
 
+void test_array()
+{
+    cache_t I1c = {.assoc = 1, .line_size = 32, .size = 2 * 32};
+    cache_t D1c = {.assoc = 1, .line_size = 32, .size = 2 * 32};
+    cache_t LLc = {.assoc = 1, .line_size = 32, .size = 2 * 32};
+
+    cachesim_initcaches(I1c, D1c, LLc);
+    sprintf(I1.desc_line, "I1");
+    sprintf(D1.desc_line, "D1");
+    sprintf(LL.desc_line, "LL");
+    dump_cache_t2(&D1);
+    dump_cache_t2(&LL);
+
+    printf("*** Check array pattern...\n");
+    CacheCC icc = {};
+    for (int i = 4; i < 64 * 3200; i+= 4) {
+        //printf("## I1 (gen): Access even words %d, size %d\n", i, 4);
+        cachesim_I1_doref_Gen(i, 12, &icc);
+        cachesim_D1_doref(1000000+i, 12, &icc);
+    }
+    dump_CacheCC(&icc);
+    printf("array counts: a %llu wl1 %llu wllc %llu l1u %%%.2f llcu %%%.2f\n",
+        icc.a, icc.l1_words, icc.llc_words, icc.l1_words * 400.0 / icc.a / I1.size, icc.llc_words * 400.0 / icc.a / LL.size);
+}
+
 int main(int argc, char **argv)
 {
     test_count_bits();
     test_set_used();
     test_caches();
     test_word_usage();
+    test_array();
     return 0;
 }
