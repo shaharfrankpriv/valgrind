@@ -45,38 +45,19 @@
 #include "cg_branchpred.c"
 #include "cg_sim.c"
 
+#include <stdio.h>
+#include <unistd.h>
 /*------------------------------------------------------------*/
 /*--- Double Buffered Logging System                        ---*/
 /*------------------------------------------------------------*/
 
-#define BUFFER_SIZE 1024  // Number of entries per buffer
 #define MAX_FILENAME_LEN 256
-
-typedef enum {
-    ACCESS_READ,
-    ACCESS_WRITE,
-    ACCESS_INSTR
-} AccessType;
-
-typedef struct {
-    Addr addr;
-    UChar size;
-    AccessType type;
-    ULong timestamp;  // High resolution timestamp
-} LogEntry;
-
-typedef struct {
-    LogEntry entries[BUFFER_SIZE];
-    Int count;
-    Bool is_active;
-} LogBuffer;
 
 static LogBuffer buffer1;
 static LogBuffer buffer2;
 static LogBuffer* active_buffer;
 static LogBuffer* inactive_buffer;
-static VgFile* mem_log_file = NULL;
-static HChar log_filename[MAX_FILENAME_LEN];
+static int mem_log_fd = -1;
 static Long guest_instrs_executed = 0;  // Global instruction counter
 
 static void init_mem_logging(const HChar* filename)
@@ -91,16 +72,18 @@ static void init_mem_logging(const HChar* filename)
     active_buffer->is_active = True;
     inactive_buffer->is_active = False;
 
-    // Copy filename
-    VG_(strncpy)(log_filename, filename, MAX_FILENAME_LEN - 1);
-    log_filename[MAX_FILENAME_LEN - 1] = '\0';
+    HChar* cachegrind_mem_file = VG_(expand_file_name)("--cachegrind-mem-file", filename);
 
-    VG_(printf)("Opening log file: %s\n", log_filename);
+    // Copy filename
+
+    VG_(printf)("Opening log file: %s\n", cachegrind_mem_file);
     // Open log file
-    mem_log_file = VG_(fopen)(log_filename, VKI_O_CREAT | VKI_O_TRUNC | VKI_O_WRONLY, VKI_S_IRUSR | VKI_S_IWUSR);
-    if (mem_log_file == NULL) {
-        VG_(umsg)("Failed to open log file: %s\n", log_filename);
+    SysRes o = VG_(open)(cachegrind_mem_file, VKI_O_CREAT | VKI_O_RDWR, 0600);
+    if (sr_isError(o)) {
+        VG_(umsg)("cannot create mem file %s\n", cachegrind_mem_file);
         VG_(exit)(1);
+    } else {
+        mem_log_fd = sr_Res(o);
     }
 }
 
@@ -109,12 +92,11 @@ static void flush_mem_log_to_file(LogBuffer* buffer)
     if (buffer->count == 0)
         return;
 
-    for (Int i = 0; i < buffer->count; i++) {
-        LogEntry* entry = &buffer->entries[i];
-        VG_(fprintf)(mem_log_file, "%p %llu %d %llu\n", (void*)entry->addr, (ULong)entry->size, (Int)entry->type,
-                     entry->timestamp);
+    Int n = VG_(write)(mem_log_fd, buffer->entries, sizeof(LogEntry) * buffer->count);
+    if (n != sizeof(LogEntry) * buffer->count) {
+        VG_(umsg)("Failed to write to mem file\n");
+        VG_(exit)(1);
     }
-
     // Reset buffer
     buffer->count = 0;
     VG_(memset)(buffer->entries, 0, sizeof(buffer->entries));
@@ -133,17 +115,10 @@ static void swap_memlog_buffers(void)
     flush_mem_log_to_file(inactive_buffer);
 }
 
-typedef enum {
-    CACHE_HIT,
-    CACHE_MISS_L1,
-    CACHE_HIT_LL,
-    CACHE_MISS_LL
-} CacheHitType;
-
 __attribute__((always_inline)) static __inline__ void log_mem_access(Addr addr, UChar size, AccessType type,
                                                                      CacheHitType hit_type)
 {
-    if (mem_log_file == NULL) {
+    if (mem_log_fd < 0) {
         return;
     }
 
@@ -157,6 +132,7 @@ __attribute__((always_inline)) static __inline__ void log_mem_access(Addr addr, 
     entry->addr = addr;
     entry->size = size;
     entry->type = type;
+    entry->hit_type = hit_type;
     entry->timestamp = guest_instrs_executed;
 }
 
@@ -167,10 +143,8 @@ static void flush_mem_logging(void)
     flush_mem_log_to_file(inactive_buffer);
 
     // Close file
-    if (mem_log_file != NULL) {
-        VG_(fclose)(mem_log_file);
-        mem_log_file = NULL;
-    }
+    VG_(close)(mem_log_fd);
+    mem_log_fd = -1;
 }
 
 /*------------------------------------------------------------*/
@@ -1768,6 +1742,7 @@ static void cg_print_usage(void)
     VG_(printf)(
             "    --cache-sim=yes|no               collect cache stats? [yes]\n"
             "    --branch-sim=yes|no              collect branch prediction stats? [no]\n"
+            "    --mem-log=yes|no                 log memory accesses? [no]\n"
             "    --cachegrind-out-file=<file>     output file name [cachegrind.out.%%p]\n"
             "    --cachegrind-mem-file=<file>     output memory file name [cachegrind.mem.%%p]\n");
 }

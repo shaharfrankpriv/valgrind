@@ -31,36 +31,59 @@
 
 // For cache simulation
 typedef struct {
-   Int size;       // bytes
-   Int assoc;
-   Int line_size;  // bytes
+    Int size;  // bytes
+    Int assoc;
+    Int line_size;  // bytes
 } cache_t;
 
-typedef
-   struct {
-      ULong a;  /* total # memory accesses of this kind */
-      ULong m1; /* misses in the first level cache */
-      ULong mL; /* misses in the second level cache */
-      ULong l1_words; /* number of different 32 bit words accessed in
-                         l1 evicted lines */
-      ULong llc_words; /* number of different 32 bit words accessed in
-                         llc evicted lines */
-   }
-   CacheCC;
+typedef enum {
+    ACCESS_READ,
+    ACCESS_WRITE,
+    ACCESS_INSTR
+} AccessType;
 
-#define MIN_LINE_SIZE         16
+typedef enum {
+    CACHE_HIT_L1,
+    CACHE_MISS_L1,
+    CACHE_MISS_LL
+} CacheHitType;
+
+// Double buffered logging system
+#define BUFFER_SIZE 1024  // Number of entries per buffer
+typedef struct {
+    Addr addr;
+    UChar size;
+    AccessType type;
+    CacheHitType hit_type;
+    ULong timestamp;  // High resolution timestamp
+} LogEntry;
+
+typedef struct {
+    LogEntry entries[BUFFER_SIZE];
+    Int count;
+    Bool is_active;
+} LogBuffer;
+
+typedef struct {
+    ULong a;         /* total # memory accesses of this kind */
+    ULong m1;        /* misses in the first level cache */
+    ULong mL;        /* misses in the second level cache */
+    ULong l1_words;  /* number of different 32 bit words accessed in
+                         l1 evicted lines */
+    ULong llc_words; /* number of different 32 bit words accessed in
+                         llc evicted lines */
+} CacheCC;
+
+#define MIN_LINE_SIZE 16
 
 // clo_*c used in the call to VG_(str_clo_cache_opt) should be statically
 // initialized to UNDEFINED_CACHE.
-#define UNDEFINED_CACHE     { -1, -1, -1 }
+#define UNDEFINED_CACHE {-1, -1, -1}
 
 // If arg is a command line option configuring I1 or D1 or LL cache,
 // then parses arg to set the relevant cache_t elements.
 // Returns True if arg is a cache command line option, False otherwise.
-Bool VG_(str_clo_cache_opt)(const HChar *arg,
-                            cache_t* clo_I1c,
-                            cache_t* clo_D1c,
-                            cache_t* clo_LLc);
+Bool VG_(str_clo_cache_opt)(const HChar* arg, cache_t* clo_I1c, cache_t* clo_D1c, cache_t* clo_LLc);
 
 // Checks the correctness of the auto-detected caches.
 // If a cache has been configured by command line options, it
@@ -68,16 +91,12 @@ Bool VG_(str_clo_cache_opt)(const HChar *arg,
 // Note that an invalid auto-detected cache will make Valgrind exit
 // with an fatal error, except if the invalid auto-detected cache
 // will be replaced by a command line defined cache.
-void VG_(post_clo_init_configure_caches)(cache_t* I1c,
-                                         cache_t* D1c,
-                                         cache_t* LLc,
-                                         cache_t* clo_I1c,
-                                         cache_t* clo_D1c,
+void VG_(post_clo_init_configure_caches)(cache_t* I1c, cache_t* D1c, cache_t* LLc, cache_t* clo_I1c, cache_t* clo_D1c,
                                          cache_t* clo_LLc);
 
 void VG_(print_cache_clo_opts)(void);
 
-#endif   // __CG_ARCH_H
+#endif  // __CG_ARCH_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

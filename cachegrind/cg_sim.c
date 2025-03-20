@@ -36,6 +36,9 @@
       - both blocks miss                 --> one miss (not two)
 */
 
+__attribute__((always_inline)) static __inline__ void log_mem_access(Addr addr, UChar size, AccessType type,
+                                                                     CacheHitType hit_type);
+
 typedef struct {
     Int size; /* bytes */
     Int assoc;
@@ -233,7 +236,7 @@ static void cachesim_initcaches(cache_t I1c, cache_t D1c, cache_t LLc)
 __attribute__((always_inline)) static __inline__ void cachesim_I1_doref_Gen(Addr a, UChar size, CacheCC* cc)
 {
     cc->a++; /* access */
-    CacheHitType hit_type = CACHE_HIT;
+    CacheHitType hit_type = CACHE_HIT_L1;
     if (cachesim_ref_is_miss(&I1, a, size)) {
         hit_type = CACHE_MISS_L1;
         cc->m1++;
@@ -256,13 +259,13 @@ __attribute__((always_inline)) static __inline__ void cachesim_I1_doref_NoX(Addr
     UInt I1_set = block & I1.sets_min_1;
 
     cc->a++; /* access */
-    CacheHitType hit_type = CACHE_HIT;
+    CacheHitType hit_type = CACHE_HIT_L1;
     // use block as tag
     UWord used = 0;
     set_used(a, size, I1.line_size, &used);
     if (cachesim_setref_is_miss(&I1, I1_set, block, used)) {
         /* L1 miss */
-        cc->m1++; 
+        cc->m1++;
         hit_type = CACHE_MISS_L1;
         UInt LL_set = block & LL.sets_min_1;
         set_used(a, size, LL.line_size, &used);
@@ -280,10 +283,11 @@ __attribute__((always_inline)) static __inline__ void cachesim_I1_doref_NoX(Addr
     cc->l1_words += I1.total_used;
 }
 
-__attribute__((always_inline)) static __inline__ void cachesim_D1_doref(Addr a, UChar size, CacheCC* cc, AccessType access_type)
+__attribute__((always_inline)) static __inline__ void cachesim_D1_doref(Addr a, UChar size, CacheCC* cc,
+                                                                        AccessType access_type)
 {
     cc->a++; /* access */
-    CacheHitType hit_type = CACHE_HIT;
+    CacheHitType hit_type = CACHE_HIT_L1;
     if (cachesim_ref_is_miss(&D1, a, size)) {
         /* L1d miss */
         cc->m1++;
