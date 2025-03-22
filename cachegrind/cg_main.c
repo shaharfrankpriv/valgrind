@@ -1553,7 +1553,7 @@ static void cg_fini(Int exitcode)
 {
     static HChar fmt[128];  // OK; large enough
 
-    scan_memory_segments();
+    detect_stack_and_heap();
 
     CacheCC D_total;
     BranchCC B_total;

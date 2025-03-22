@@ -1,135 +1,137 @@
 /*--------------------------------------------------------------------*/
-/*--- Memory segment scanner using Valgrind's find_nsegment API.   ---*/
+/*--- Direct stack and heap detection for Cachegrind.             ---*/
 /*--------------------------------------------------------------------*/
 
 /* 
- * This code uses VG_(am_find_nsegment) to scan memory without relying on /proc.
+ * This code uses direct methods to identify stack and heap.
  */
 
+#include "pub_tool_aspacemgr.h"
 #include "pub_tool_basics.h"
+#include "pub_tool_guest.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcprint.h"
-#include "pub_tool_aspacemgr.h"
+#include "pub_tool_machine.h"
 #include "pub_tool_mallocfree.h"
+#include "pub_tool_threadstate.h"
 
-// Scan the memory address space to find segments
-static void scan_memory_segments(void)
+// Print information about a specific memory address
+static void print_address_info(Addr addr, const HChar* description)
 {
-   VG_(umsg)("\n=== MEMORY SEGMENT MAP ===\n");
-   VG_(umsg)("%-16s %-16s %-7s %s\n", 
-          "START", "END", "PERMS", "TYPE");
-   VG_(umsg)("---------------------------------------------------------------\n");
-   
-   // Track if we've already seen a segment
-   UWord* seen_starts = NULL;
-   UWord* seen_ends = NULL;
-   Int seen_count = 0;
-   Int seen_max = 1000;  // Maximum number of segments to track
-   
-   seen_starts = VG_(malloc)("seen.starts", seen_max * sizeof(UWord));
-   seen_ends = VG_(malloc)("seen.ends", seen_max * sizeof(UWord));
-   
-   if (!seen_starts || !seen_ends) {
-      VG_(umsg)("Error: Failed to allocate memory for segment tracking\n");
-      if (seen_starts) VG_(free)(seen_starts);
-      if (seen_ends) VG_(free)(seen_ends);
-      return;
-   }
-   
-   // Scan address space at regular intervals
-   Int segments_found = 0;
-   
-   // Define scan ranges - we'll scan in chunks
-   static const struct {
-      Addr start;
-      Addr end;
-      Addr step;
-   } scan_ranges[] = {
-      // Low memory (code, data, bss) - scan densely
-      { 0x400000, 0x1000000, 0x1000 },
-      
-      // Heap and nearby segments - scan moderately
-      { 0x1000000, 0x10000000, 0x10000 },
-      
-      // Middle memory - scan sparsely
-      { 0x10000000, 0x100000000ULL, 0x1000000 },
-      
-      // Higher memory - scan very sparsely
-      { 0x100000000ULL, 0x7fffffffffff, 0x100000000ULL }
-   };
-   
-   // Scan through ranges
-   for (Int r = 0; r < sizeof(scan_ranges)/sizeof(scan_ranges[0]); r++) {
-      for (Addr addr = scan_ranges[r].start; 
-           addr < scan_ranges[r].end; 
-           addr += scan_ranges[r].step) {
-         
-         const NSegment* seg = VG_(am_find_nsegment)(addr);
-         if (!seg) continue;
-         
-         // Skip if no permissions
-         if (!seg->hasR && !seg->hasW && !seg->hasX) continue;
-         
-         // Check if we've already seen this segment
-         Bool already_seen = False;
-         for (Int i = 0; i < seen_count; i++) {
-            if (seg->start == seen_starts[i] && seg->end == seen_ends[i]) {
-               already_seen = True;
-               break;
-            }
-         }
-         
-         if (already_seen) continue;
-         
-         // Add to seen list if there's room
-         if (seen_count < seen_max) {
-            seen_starts[seen_count] = seg->start;
-            seen_ends[seen_count] = seg->end;
-            seen_count++;
-         }
-         
-         // Format permissions
-         HChar perms[4];
-         perms[0] = seg->hasR ? 'r' : '-';
-         perms[1] = seg->hasW ? 'w' : '-';
-         perms[2] = seg->hasX ? 'x' : '-';
-         perms[3] = '\0';
-         
-         // Determine segment type
-         const HChar* seg_type = "unknown";
-         if (seg->isCH) {
-            seg_type = "heap";
-         } else if (seg->hasX && seg->hasR) {
-            seg_type = "code";
-         } else if (seg->hasR && seg->hasW) {
-            // Typical data segment
-            if (addr > 0x7fffff000000ULL) {
-               seg_type = "stack";
-            } else {
-               seg_type = "data";
-            }
-         } else if (seg->hasR && !seg->hasW) {
-            seg_type = "rodata";
-         }
-         
-         // Print segment info
-         VG_(umsg)("0x%014lx 0x%014lx %-7s %s\n", 
-                seg->start, seg->end, perms, seg_type);
-         
-         segments_found++;
-      }
-   }
-   
-   VG_(umsg)("Found %d memory segments\n", segments_found);
-   VG_(umsg)("===============================================================\n");
-   
-   // Free tracking arrays
-   VG_(free)(seen_starts);
-   VG_(free)(seen_ends);
+    const NSegment* seg = VG_(am_find_nsegment)(addr);
+    if (!seg) {
+        VG_(umsg)("%s (0x%lx): Not in any valid segment\n", description, addr);
+        return;
+    }
+
+    HChar perms[4];
+    perms[0] = seg->hasR ? 'r' : '-';
+    perms[1] = seg->hasW ? 'w' : '-';
+    perms[2] = seg->hasX ? 'x' : '-';
+    perms[3] = '\0';
+
+    VG_(umsg)("%s (0x%lx): In segment 0x%lx-0x%lx perms=%s isCH=%d kind=%d\n", description, addr, seg->start, seg->end,
+              perms, seg->isCH, seg->kind);
+}
+
+// Find stack segment using SP register
+static void find_stack_segment(void)
+{
+    VG_(umsg)("\n=== STACK DETECTION ===\n");
+
+    ThreadId tid;
+    Addr sp;
+
+    for (tid = 1; tid < VG_N_THREADS; tid++) {
+        if (VG_(is_valid_tid)(tid)) {
+            sp = VG_(get_SP)(tid);
+
+            VG_(umsg)("Thread %d SP = 0x%lx\n", tid, sp);
+            print_address_info(sp, "Stack pointer");
+        }
+    }
+}
+
+// Find heap segments directly
+static void find_heap_segments(void)
+{
+    VG_(umsg)("\n=== HEAP DETECTION ===\n");
+
+    // Common heap start addresses
+    static const struct {
+        Addr addr;
+        const HChar* desc;
+    } heap_addrs[] = {
+            {0x08000000, "Common heap base (0x8000000)"        },
+            {0x08048000, "Another common heap area (0x8048000)"},
+            {0x00603000, "Classic brk-based heap (0x603000)"   },
+            {0x01000000, "mmap-based allocations (0x1000000)"  },
+            {0x00602000, "Another brk point (0x602000)"        },
+            {0x00601000, "Early brk point (0x601000)"          }
+    };
+
+    // Check known heap locations
+    for (Int i = 0; i < sizeof(heap_addrs) / sizeof(heap_addrs[0]); i++) {
+        print_address_info(heap_addrs[i].addr, heap_addrs[i].desc);
+    }
+
+    // Scan all segments for client heap (isCH) flag
+    VG_(umsg)("\nScanning memory for segments with isCH flag set:\n");
+
+    const HChar* name;
+    Bool found_ch = False;
+
+    // Scan common heap ranges more densely
+    for (Addr addr = 0x601000; addr < 0x610000; addr += 0x1000) {
+        const NSegment* seg = VG_(am_find_nsegment)(addr);
+        if (seg && seg->isCH) {
+            HChar perms[4];
+            perms[0] = seg->hasR ? 'r' : '-';
+            perms[1] = seg->hasW ? 'w' : '-';
+            perms[2] = seg->hasX ? 'x' : '-';
+            perms[3] = '\0';
+
+            VG_(umsg)("HEAP: 0x%lx-0x%lx perms=%s size=%lu bytes\n", seg->start, seg->end, perms,
+                      seg->end - seg->start);
+            found_ch = True;
+        }
+    }
+
+    for (Addr addr = 0x8000000; addr < 0x10000000; addr += 0x10000) {
+        const NSegment* seg = VG_(am_find_nsegment)(addr);
+        if (seg && seg->isCH) {
+            HChar perms[4];
+            perms[0] = seg->hasR ? 'r' : '-';
+            perms[1] = seg->hasW ? 'w' : '-';
+            perms[2] = seg->hasX ? 'x' : '-';
+            perms[3] = '\0';
+
+            VG_(umsg)("HEAP: 0x%lx-0x%lx perms=%s size=%lu bytes\n", seg->start, seg->end, perms,
+                      seg->end - seg->start);
+            found_ch = True;
+        }
+    }
+
+    if (!found_ch) {
+        VG_(umsg)("No segments with isCH flag found. This is unusual.\n");
+    }
+}
+
+// Direct stack and heap detection
+static void detect_stack_and_heap(void)
+{
+    // Find stack segments first
+    find_stack_segment();
+
+    // Then find heap segments
+    find_heap_segments();
+
+    // Print separation line
+    VG_(umsg)("===============================================================\n");
 }
 
 /* 
  * Add to cg_fini:
  *
- * scan_memory_segments();
+ * detect_stack_and_heap();
  */
