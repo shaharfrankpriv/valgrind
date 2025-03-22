@@ -26,6 +26,7 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#include "pub_tool_aspacemgr.h"
 #include "pub_tool_basics.h"
 #include "pub_tool_clientstate.h"
 #include "pub_tool_debuginfo.h"
@@ -38,15 +39,17 @@
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
 #include "pub_tool_oset.h"
+#include "pub_tool_threadstate.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_xarray.h"
 
-#include "cg_arch.h"
-#include "cg_branchpred.c"
-#include "cg_sim.c"
-
 #include <stdio.h>
 #include <unistd.h>
+#include "cg_arch.h"
+#include "cg_branchpred.c"
+#include "cg_segmap.c"
+#include "cg_sim.c"
+
 /*------------------------------------------------------------*/
 /*--- Double Buffered Logging System                        ---*/
 /*------------------------------------------------------------*/
@@ -133,7 +136,12 @@ __attribute__((always_inline)) static __inline__ void log_mem_access(Addr addr, 
     entry->size = size;
     entry->type = type;
     entry->hit_type = hit_type;
+    if (type == ACCESS_INSTR) {
+        guest_instrs_executed++;
+    }
     entry->timestamp = guest_instrs_executed;
+    //VG_(printf)("Logged mem access: %llu %p %d %c %c\n", entry->timestamp, (void*)entry->addr, (int)entry->size,
+    //            access_type_char(entry->type), cache_hit_char(entry->hit_type));
 }
 
 static void flush_mem_logging(void)
@@ -1545,6 +1553,8 @@ static void cg_fini(Int exitcode)
 {
     static HChar fmt[128];  // OK; large enough
 
+    scan_memory_segments();
+
     CacheCC D_total;
     BranchCC B_total;
     ULong LL_total_m, LL_total_mr, LL_total_mw, LL_total, LL_total_r, LL_total_w, LL_a;
@@ -1802,6 +1812,8 @@ static void cg_post_clo_init(void)
         VG_(umsg)("  but it is not.  Exiting now.\n");
         VG_(exit)(1);
     }
+
+    //sg_build_segment_map();
 
     cachesim_initcaches(I1c, D1c, LLc);
     if (clo_mem_log) {

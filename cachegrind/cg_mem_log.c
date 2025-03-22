@@ -13,95 +13,144 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_xarray.h"
 
+#include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include "cg_arch.h"
 
 static const char* argv0 = "cg_mem_log";
-static VgFile* mem_log_file = NULL;
+static int mem_log_fd = -1;
 static LogBuffer buffer1;
+static int mem_log_debug = 0;
 
-void log_mem_access(Addr addr, UChar size, AccessType type, CacheHitType hit_type)
+typedef struct MemStats {
+    Int total_size;
+    Int total_count;
+    Int total_accesses;
+    Int total_hits;
+    Int total_misses;
+} MemStats;
+
+enum MemType {
+    DATA_READ,
+    DATA_WRITE,
+    INSTRUCTION_READ,
+    INSTRUCTION_WRITE,
+    STACK_READ,
+    STACK_WRITE,
+    HEAP_READ,
+    HEAP_WRITE,
+    OTHER,
+};
+
+static MemStats mem_stats[OTHER + 1];
+static void Debug(const char* fmt, ...)
 {
-    VG_(fprintf)(mem_log_file, "%p %llu %d %llu\n", (void*)addr, (ULong)size, (Int)type, (ULong)hit_type);
+    if (!mem_log_debug)
+        return;
+
+    char str[256] = "Debug: ";
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(str + 7, sizeof(str) - 7, fmt, args);
+    va_end(args);
+    fprintf(stderr, "%s\n", str);
 }
 
 static void open_mem_log_file(const HChar* filename)
 {
     // Initialize buffers
-    VG_(memset)(&buffer1, 0, sizeof(LogBuffer));
-
-    HChar* cachegrind_mem_file = VG_(expand_file_name)("--cachegrind-mem-file", filename);
+    memset(&buffer1, 0, sizeof(LogBuffer));
 
     // Copy filename
 
-    VG_(printf)("Opening log file: %s\n", cachegrind_mem_file);
+    Debug("Opening log file: %s", filename);
     // Open log file
-    mem_log_file = VG_(fopen)(cachegrind_mem_file, VKI_O_RDONLY, VKI_S_IRUSR | VKI_S_IWUSR);
-    if (mem_log_file == NULL) {
-        VG_(umsg)("Failed to open log file: %s\n", cachegrind_mem_file);
-        VG_(exit)(1);
+    int o = open(filename, O_RDONLY);
+    if (o < 0) {
+        fprintf(stderr, "cannot open mem file '%s': %m\n", filename);
+        exit(1);
+    } else {
+        mem_log_fd = o;
     }
 }
 
 static void dump_buffer(LogEntry* buffer, Int n)
 {
-    VG_(printf)("Dumping buffer\n");
+    Debug("Dumping buffer\n");
     for (Int i = 0; i < n; i++, buffer++) {
-        VG_(printf)("%llu %p %llu %d %llu\n", buffer->timestamp, (void*)buffer->addr, (ULong)buffer->size,
-                    (Int)buffer->type, (ULong)buffer->hit_type);
+        printf("%llu %p %d %c %c\n", buffer->timestamp, (void*)buffer->addr, (int)buffer->size,
+               access_type_char(buffer->type), cache_hit_char(buffer->hit_type));
     }
 }
 
-static int read_buffer()
+static int read_buffer(void)
 {
-    char buffer[BUFFER_SIZE * sizeof(LogEntry)];
-    VG_(printf)("Reading buffer\n");
-    Int n = fread(buffer, sizeof(LogEntry), BUFFER_SIZE, mem_log_file);
+    LogEntry buffer[BUFFER_SIZE];
+    Debug("Reading buffer");
+    Int n = read(mem_log_fd, (void*)buffer, sizeof(buffer));
     if (n <= 0) {
         return -1;
     }
-    VG_(printf)("Read %d entries\n", n);
-    dump_buffer(buffer, n);
+    Debug("Read %d entries", n);
+    dump_buffer(buffer, n / sizeof(LogEntry));
     return n;
 }
 
-static void read_all_buffers()
+static void read_all_buffers(void)
 {
     while (read_buffer() > 0) {
         ;
     }
-    VG_(fclose)(mem_log_file);
-    mem_log_file = NULL;
+    close(mem_log_fd);
+    mem_log_fd = -1;
 }
 
 static void usage(void)
 {
-    VG_(printf)(
+    fprintf(stderr,
             "Usage: %s [options] <filename1> <filename2> ...\n"
             "    --help|-h               print this help message\n",
             argv0);
-    VG_(exit)(1);
+    exit(1);
 }
 
 int main(int argc, char** argv)
 {
     Int i;
-    char* outfilename = NULL;
-    Int outfileix = 0;
 
     if (argv[0])
         argv0 = argv[0];
 
-    if (argc < 2)
-        usage();
-
     for (i = 1; i < argc; i++) {
-        if (streq(argv[i], "-h") || streq(argv[i], "--help"))
+        if (argv[i] == NULL) {
+            break;
+        }
+
+        if (argv[i][0] != '-') {
+            break;
+        }
+
+        if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--debug") == 0) {
+            mem_log_debug = True;
+            continue;
+        }
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             usage();
+            continue;
+        }
     }
 
+    argc -= i;
+    argv += i;
+
+    if (argc < 1)
+        usage();
+
     /* Scan args, all arguments are filenames */
-    for (i = 1; i < argc; i++) {
+    for (i = 0; i < argc; i++) {
         open_mem_log_file(argv[i]);
         read_all_buffers();
     }

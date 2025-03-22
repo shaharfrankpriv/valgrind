@@ -38,7 +38,7 @@ endif
 
 cg_mem_log_SOURCES = cg_mem_log.c
 cg_mem_log_CPPFLAGS  = $(AM_CPPFLAGS_PRI)
-cg_mem_log_CFLAGS    = $(AM_CFLAGS_PRI)
+cg_mem_log_CFLAGS    = $(AM_CFLAGS_PRI) -Wall
 cg_mem_log_CCASFLAGS = $(AM_CCASFLAGS_PRI)
 cg_mem_log_LDFLAGS   = $(AM_CFLAGS_PRI)
 # If there is no secondary platform, and the platforms include x86-darwin,
