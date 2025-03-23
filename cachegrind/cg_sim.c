@@ -49,8 +49,13 @@ typedef struct {
     Int tag_shift;
     HChar desc_line[128]; /* large enough */
     UWord* tags;
-    UWord* used;    /* SF: utilization bitmask per tag, 32bit granularity */
-    Int total_used; /* percent of already accessed words */
+    UWord* used;                       /* SF: utilization bitmask per tag, 32bit granularity */
+    UChar* dirty;                      /* SF: dirty flag per tag, cache line granularity */
+    Int total_used;                    /* percent of already accessed words */
+    UWord total_dirty_read_evictions;  /* total number of dirty cache lines evicted */
+    UWord total_dirty_write_evictions; /* total number of dirty cache lines evicted */
+    UWord total_read_loads;            /* total number of loads due to read */
+    UWord total_write_loads;           /* total number of loads due to write */
 } cache_t2;
 
 /* By this point, the size/assoc/line_size has been checked. */
@@ -75,10 +80,11 @@ static void cachesim_initcache(cache_t config, cache_t2* c)
 
     c->tags = VG_(malloc)("cg.sim.ci.1", sizeof(UWord) * c->sets * c->assoc);
     c->used = VG_(malloc)("cg.sim.ci.used", sizeof(UWord) * c->sets * c->assoc);
-
+    c->dirty = VG_(malloc)("cg.sim.ci.dirty", sizeof(UChar) * c->sets * c->assoc);
     for (i = 0; i < c->sets * c->assoc; i++) {
         c->tags[i] = ~0;
         c->used[i] = 0;
+        c->dirty[i] = 0;
     }
     c->total_used = 0;
 }
@@ -120,16 +126,17 @@ static __inline__ Int set_used(UWord addr, Int size, Int line_size, UWord* used)
  * Without inlining of simulator functions, cachegrind can get 40% slower.
  */
 __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(cache_t2* c, UInt set_no, UWord tag,
-                                                                              UWord u)
+                                                                              UWord u, AccessType access_type)
 {
     int i, j;
     UWord *set, *used;
+    UChar* dirty;
     UWord prev_used = 0; /* SF: prev used - used if shuffled */
     int prev_bits = 0, post_bits = 0;
 
     set = &(c->tags[set_no * c->assoc]);
     used = &(c->used[set_no * c->assoc]);
-
+    dirty = &(c->dirty[set_no * c->assoc]);
     /* This loop is unrolled for just the first case, which is the most */
     /* common.  We can't unroll any further because it would screw up   */
     /* if we have a direct-mapped (1-way) cache.                        */
@@ -138,6 +145,9 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
         used[0] |= u;
         post_bits = count_bits(used[0]);
         c->total_used += post_bits - prev_bits;
+        if (access_type == ACCESS_WRITE) {
+            dirty[0] = 1;
+        }
         return 0; /* hit */
     }
 
@@ -155,6 +165,9 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
             prev_bits = count_bits(prev_used);
             post_bits = count_bits(used[0]);
             c->total_used += post_bits - prev_bits;
+            if (access_type == ACCESS_WRITE) {
+                dirty[0] = 1;
+            }
 
             return 0; /* hit */
         }
@@ -165,17 +178,36 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
     for (j = c->assoc - 1; j > 0; j--) {
         set[j] = set[j - 1];
         used[j] = used[j - 1];
+        dirty[j] = dirty[j - 1];
+    }
+    if (access_type == ACCESS_READ) {
+        c->total_read_loads++;
+    } else {
+        c->total_write_loads++;
+    }
+    log_mem_access(set[0] << c->line_size_bits, c->line_size, ACCESS_LOAD, CACHE_LOAD);
+    if (dirty[0] != 0) {
+        if (access_type == ACCESS_READ) {
+            c->total_dirty_read_evictions++;
+        } else {
+            c->total_dirty_write_evictions++;
+        }
+        log_mem_access(set[0] << c->line_size_bits, c->line_size, ACCESS_STORE, CACHE_STORE);
     }
     set[0] = tag;
     used[0] = u;
+    dirty[0] = access_type == ACCESS_WRITE ? 1 : 0;
     post_bits = count_bits(used[0]);
     c->total_used += post_bits - prev_bits;
 
     return 1; /* miss */
 }
 
-__attribute__((always_inline)) static __inline__ Bool cachesim_ref_is_miss(cache_t2* c, Addr a, UChar size)
+__attribute__((always_inline)) static __inline__ Bool cachesim_ref_is_miss(cache_t2* c, Addr a, UChar size,
+                                                                           AccessType access_type)
 {
+    // Access type is used to mark the cache line as dirty.
+
     /* A memory block has the size of a cache line */
     UWord block1 = a >> c->line_size_bits;
     UWord block2 = (a + size - 1) >> c->line_size_bits;
@@ -196,7 +228,7 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_ref_is_miss(cache
         if (set_used(a, size, c->line_size, &used) > 0) {
             VG_(tool_panic)("set_used didn't consume the block within one line");
         }
-        return cachesim_setref_is_miss(c, set1, tag1, used);
+        return cachesim_setref_is_miss(c, set1, tag1, used, access_type);
     }
 
     /* Access straddles two lines. */
@@ -214,7 +246,8 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_ref_is_miss(cache
         set_used(0, left, c->line_size, &used2);
 
         /* always do both, as state is updated as side effect */
-        return (cachesim_setref_is_miss(c, set1, tag1, used1) | cachesim_setref_is_miss(c, set2, tag2, used2));
+        return (cachesim_setref_is_miss(c, set1, tag1, used1, access_type) |
+                cachesim_setref_is_miss(c, set2, tag2, used2, access_type));
     }
     VG_(printf)("addr: %lx  size: %u  blocks: %lu %lu", a, size, block1, block2);
     VG_(tool_panic)("item straddles more than two cache sets");
@@ -237,10 +270,10 @@ __attribute__((always_inline)) static __inline__ void cachesim_I1_doref_Gen(Addr
 {
     cc->a++; /* access */
     CacheHitType hit_type = CACHE_HIT_L1;
-    if (cachesim_ref_is_miss(&I1, a, size)) {
+    if (cachesim_ref_is_miss(&I1, a, size, ACCESS_INSTR)) {
         hit_type = CACHE_MISS_L1;
         cc->m1++;
-        if (cachesim_ref_is_miss(&LL, a, size)) {
+        if (cachesim_ref_is_miss(&LL, a, size, ACCESS_INSTR)) {
             hit_type = CACHE_MISS_LL;
             cc->mL++;
         }
@@ -263,14 +296,14 @@ __attribute__((always_inline)) static __inline__ void cachesim_I1_doref_NoX(Addr
     // use block as tag
     UWord used = 0;
     set_used(a, size, I1.line_size, &used);
-    if (cachesim_setref_is_miss(&I1, I1_set, block, used)) {
+    if (cachesim_setref_is_miss(&I1, I1_set, block, used, ACCESS_INSTR)) {
         /* L1 miss */
         cc->m1++;
         hit_type = CACHE_MISS_L1;
         UInt LL_set = block & LL.sets_min_1;
         set_used(a, size, LL.line_size, &used);
         // can use block as tag as L1I and LL cache line sizes are equal
-        if (cachesim_setref_is_miss(&LL, LL_set, block, used)) {
+        if (cachesim_setref_is_miss(&LL, LL_set, block, used, ACCESS_INSTR)) {
             /* LL miss */
             hit_type = CACHE_MISS_LL;
             cc->mL++;
@@ -288,11 +321,11 @@ __attribute__((always_inline)) static __inline__ void cachesim_D1_doref(Addr a, 
 {
     cc->a++; /* access */
     CacheHitType hit_type = CACHE_HIT_L1;
-    if (cachesim_ref_is_miss(&D1, a, size)) {
+    if (cachesim_ref_is_miss(&D1, a, size, access_type)) {
         /* L1d miss */
         cc->m1++;
         hit_type = CACHE_MISS_L1;
-        if (cachesim_ref_is_miss(&LL, a, size)) {
+        if (cachesim_ref_is_miss(&LL, a, size, access_type)) {
             /* LL miss */
             hit_type = CACHE_MISS_LL;
             cc->mL++;

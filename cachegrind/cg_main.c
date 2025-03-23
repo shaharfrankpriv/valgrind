@@ -47,113 +47,9 @@
 #include <unistd.h>
 #include "cg_arch.h"
 #include "cg_branchpred.c"
+#include "cg_mem_logger.c"
 #include "cg_segmap.c"
 #include "cg_sim.c"
-
-/*------------------------------------------------------------*/
-/*--- Double Buffered Logging System                        ---*/
-/*------------------------------------------------------------*/
-
-#define MAX_FILENAME_LEN 256
-
-static LogBuffer buffer1;
-static LogBuffer buffer2;
-static LogBuffer* active_buffer;
-static LogBuffer* inactive_buffer;
-static int mem_log_fd = -1;
-static Long guest_instrs_executed = 0;  // Global instruction counter
-
-static void init_mem_logging(const HChar* filename)
-{
-    // Initialize buffers
-    VG_(memset)(&buffer1, 0, sizeof(LogBuffer));
-    VG_(memset)(&buffer2, 0, sizeof(LogBuffer));
-
-    // Set up active/inactive buffers
-    active_buffer = &buffer1;
-    inactive_buffer = &buffer2;
-    active_buffer->is_active = True;
-    inactive_buffer->is_active = False;
-
-    HChar* cachegrind_mem_file = VG_(expand_file_name)("--cachegrind-mem-file", filename);
-
-    // Copy filename
-
-    VG_(printf)("Opening log file: %s\n", cachegrind_mem_file);
-    // Open log file
-    SysRes o = VG_(open)(cachegrind_mem_file, VKI_O_CREAT | VKI_O_RDWR, 0600);
-    if (sr_isError(o)) {
-        VG_(umsg)("cannot create mem file %s\n", cachegrind_mem_file);
-        VG_(exit)(1);
-    } else {
-        mem_log_fd = sr_Res(o);
-    }
-}
-
-static void flush_mem_log_to_file(LogBuffer* buffer)
-{
-    if (buffer->count == 0)
-        return;
-
-    Int n = VG_(write)(mem_log_fd, buffer->entries, sizeof(LogEntry) * buffer->count);
-    if (n != sizeof(LogEntry) * buffer->count) {
-        VG_(umsg)("Failed to write to mem file\n");
-        VG_(exit)(1);
-    }
-    // Reset buffer
-    buffer->count = 0;
-    VG_(memset)(buffer->entries, 0, sizeof(buffer->entries));
-}
-
-static void swap_memlog_buffers(void)
-{
-    LogBuffer* temp = active_buffer;
-    active_buffer = inactive_buffer;
-    inactive_buffer = temp;
-
-    active_buffer->is_active = True;
-    inactive_buffer->is_active = False;
-
-    // Write inactive buffer to file
-    flush_mem_log_to_file(inactive_buffer);
-}
-
-__attribute__((always_inline)) static __inline__ void log_mem_access(Addr addr, UChar size, AccessType type,
-                                                                     CacheHitType hit_type)
-{
-    if (mem_log_fd < 0) {
-        return;
-    }
-
-    // If active buffer is full, swap buffers
-    if (active_buffer->count >= BUFFER_SIZE) {
-        swap_memlog_buffers();
-    }
-
-    // Add entry to active buffer
-    LogEntry* entry = &active_buffer->entries[active_buffer->count++];
-    entry->addr = addr;
-    entry->size = size;
-    entry->type = type;
-    entry->hit_type = hit_type;
-    if (type == ACCESS_INSTR) {
-        guest_instrs_executed++;
-    }
-    entry->timestamp = guest_instrs_executed;
-    //VG_(printf)("Logged mem access: %llu %p %d %c %c\n", entry->timestamp, (void*)entry->addr, (int)entry->size,
-    //            access_type_char(entry->type), cache_hit_char(entry->hit_type));
-}
-
-static void flush_mem_logging(void)
-{
-    // Write any remaining entries in both buffers
-    flush_mem_log_to_file(active_buffer);
-    flush_mem_log_to_file(inactive_buffer);
-
-    // Close file
-    VG_(close)(mem_log_fd);
-    mem_log_fd = -1;
-}
 
 /*------------------------------------------------------------*/
 /*--- Constants                                            ---*/
@@ -1499,6 +1395,11 @@ static void fprint_CC_table_and_calc_totals(void)
         distinct_lines++;
     }
 
+    Dr_total.st = LL.total_dirty_read_evictions;
+    Dw_total.st = LL.total_dirty_write_evictions;
+    Dr_total.ld = LL.total_read_loads;
+    Dw_total.ld = LL.total_write_loads;
+
     // Summary stats must come after rest of table, since we calculate them
     // during traversal.  */
     if (clo_cache_sim && clo_branch_sim) {
@@ -1591,7 +1492,6 @@ static void cg_fini(Int exitcode)
       miss numbers */
     if (clo_cache_sim) {
         VG_(umsg)(fmt, "I1  misses:   ", Ir_total.m1);
-        VG_(umsg)(fmt, "LLi misses:   ", Ir_total.mL);
         VG_(umsg)(fmt, "I1  avg words:", Ir_total.l1_words);
 
         if (0 == Ir_total.a)
@@ -1607,6 +1507,8 @@ static void cg_fini(Int exitcode)
         D_total.m1 = Dr_total.m1 + Dw_total.m1;
         D_total.mL = Dr_total.mL + Dw_total.mL;
         D_total.l1_words = (Dr_total.l1_words + Dw_total.l1_words) / D_total.a;
+        D_total.st = Dr_total.st + Dw_total.st;
+        D_total.ld = Dr_total.ld + Dw_total.ld;
         Dr_total.l1_words /= Dr_total.a;
         Dw_total.l1_words /= Dw_total.a;
 
@@ -1617,6 +1519,8 @@ static void cg_fini(Int exitcode)
         VG_(umsg)(fmt, "D1 avg words: ", D_total.l1_words, Dr_total.l1_words, Dw_total.l1_words);
         VG_(umsg)(fmt, "D1  misses:   ", D_total.m1, Dr_total.m1, Dw_total.m1);
         VG_(umsg)(fmt, "LLd misses:   ", D_total.mL, Dr_total.mL, Dw_total.mL);
+        VG_(umsg)("LLd evicts %llu data evicted %llu bytes\n", D_total.st, D_total.st * LL.line_size);
+        VG_(umsg)("LLd loads %llu data evicted %llu bytes\n", D_total.ld, D_total.ld * LL.line_size);
 
         if (0 == D_total.a)
             D_total.a = 1;

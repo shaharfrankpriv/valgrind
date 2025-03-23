@@ -39,7 +39,9 @@ typedef struct {
 typedef enum {
     CACHE_HIT_L1,
     CACHE_MISS_L1,
-    CACHE_MISS_LL
+    CACHE_MISS_LL,
+    CACHE_STORE,
+    CACHE_LOAD
 } CacheHitType;
 
 static inline Int cache_hit_char(CacheHitType hit_type)
@@ -51,6 +53,10 @@ static inline Int cache_hit_char(CacheHitType hit_type)
         return 'L';
     case CACHE_MISS_LL:
         return 'M';
+    case CACHE_STORE:
+        return 'S';
+    case CACHE_LOAD:
+        return 'L';
     default:
         return '?';
     }
@@ -61,7 +67,9 @@ static inline Int cache_hit_char(CacheHitType hit_type)
 typedef enum {
     ACCESS_READ,
     ACCESS_WRITE,
-    ACCESS_INSTR
+    ACCESS_INSTR,
+    ACCESS_STORE,
+    ACCESS_LOAD
 } AccessType;
 
 static inline Int access_type_char(AccessType atype)
@@ -73,6 +81,10 @@ static inline Int access_type_char(AccessType atype)
         return 'W';
     case ACCESS_INSTR:
         return 'I';
+    case ACCESS_STORE:
+        return 'S';
+    case ACCESS_LOAD:
+        return 'L';
     default:
         return '?';
     }
@@ -96,10 +108,12 @@ typedef struct {
     ULong a;         /* total # memory accesses of this kind */
     ULong m1;        /* misses in the first level cache */
     ULong mL;        /* misses in the second level cache */
+    ULong st;        /* stores (dirty evictions) */
+    ULong ld;        /* loads (misses) */
     ULong l1_words;  /* number of different 32 bit words accessed in
                          l1 evicted lines */
     ULong llc_words; /* number of different 32 bit words accessed in
-                         llc evicted lines */
+                        llc evicted lines */
 } CacheCC;
 
 #define MIN_LINE_SIZE 16
