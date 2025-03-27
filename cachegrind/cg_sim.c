@@ -56,6 +56,7 @@ typedef struct {
     UWord total_dirty_write_evictions; /* total number of dirty cache lines evicted */
     UWord total_read_loads;            /* total number of loads due to read */
     UWord total_write_loads;           /* total number of loads due to write */
+    Bool is_llc;                       /* Is this a Last Level Cache? */
 } cache_t2;
 
 /* By this point, the size/assoc/line_size has been checked. */
@@ -185,14 +186,18 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
     } else {
         c->total_write_loads++;
     }
-    log_mem_access(set[0] << c->line_size_bits, c->line_size, ACCESS_LOAD, CACHE_LOAD);
     if (dirty[0] != 0) {
         if (access_type == ACCESS_READ) {
             c->total_dirty_read_evictions++;
         } else {
             c->total_dirty_write_evictions++;
         }
-        log_mem_access(set[0] << c->line_size_bits, c->line_size, ACCESS_STORE, CACHE_STORE);
+        if (c->is_llc) {
+            log_mem_access(set[0] << c->line_size_bits, c->line_size, ACCESS_STORE, CACHE_STORE);
+        }
+    }
+    if (c->is_llc) {
+        log_mem_access(tag << c->line_size_bits, c->line_size, ACCESS_LOAD, CACHE_LOAD);
     }
     set[0] = tag;
     used[0] = u;
@@ -264,6 +269,7 @@ static void cachesim_initcaches(cache_t I1c, cache_t D1c, cache_t LLc)
     cachesim_initcache(I1c, &I1);
     cachesim_initcache(D1c, &D1);
     cachesim_initcache(LLc, &LL);
+    LL.is_llc = True;
 }
 
 __attribute__((always_inline)) static __inline__ void cachesim_I1_doref_Gen(Addr a, UChar size, CacheCC* cc)
@@ -273,6 +279,7 @@ __attribute__((always_inline)) static __inline__ void cachesim_I1_doref_Gen(Addr
     if (cachesim_ref_is_miss(&I1, a, size, ACCESS_INSTR)) {
         hit_type = CACHE_MISS_L1;
         cc->m1++;
+
         if (cachesim_ref_is_miss(&LL, a, size, ACCESS_INSTR)) {
             hit_type = CACHE_MISS_LL;
             cc->mL++;
