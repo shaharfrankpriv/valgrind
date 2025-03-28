@@ -21,7 +21,7 @@ noinst_HEADERS = \
 # cg_merge (built for the primary target only)
 #----------------------------------------------------------------------------
 
-bin_PROGRAMS = cg_merge
+bin_PROGRAMS = cg_merge cg_mem_log
 
 cg_merge_SOURCES = cg_merge.c
 cg_merge_CPPFLAGS  = $(AM_CPPFLAGS_PRI)
@@ -33,6 +33,19 @@ cg_merge_LDFLAGS   = $(AM_CFLAGS_PRI)
 if ! VGCONF_HAVE_PLATFORM_SEC
 if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
 cg_merge_LDFLAGS   += -Wl,-read_only_relocs -Wl,suppress
+endif
+endif
+
+cg_mem_log_SOURCES = cg_mem_log.c
+cg_mem_log_CPPFLAGS  = $(AM_CPPFLAGS_PRI)
+cg_mem_log_CFLAGS    = $(AM_CFLAGS_PRI) -Wall
+cg_mem_log_CCASFLAGS = $(AM_CCASFLAGS_PRI)
+cg_mem_log_LDFLAGS   = $(AM_CFLAGS_PRI)
+# If there is no secondary platform, and the platforms include x86-darwin,
+# then the primary platform must be x86-darwin.  Hence:
+if ! VGCONF_HAVE_PLATFORM_SEC
+if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
+cg_mem_log_LDFLAGS   += -Wl,-read_only_relocs -Wl,suppress
 endif
 endif
 
