@@ -24,7 +24,7 @@ static const char* argv0 = "cg_mem_log";
 static int mem_log_fd = -1;
 static LogBuffer buffer1;
 static int mem_log_debug = 0;
-
+static mem_log_header_t mem_log_header;
 typedef struct MemStats {
     Int total_size;
     Int total_count;
@@ -45,7 +45,7 @@ enum MemType {
     OTHER,
 };
 
-static MemStats mem_stats[OTHER + 1];
+//static MemStats mem_stats[OTHER + 1];
 static void Debug(const char* fmt, ...)
 {
     if (!mem_log_debug)
@@ -57,6 +57,14 @@ static void Debug(const char* fmt, ...)
     vsnprintf(str + 7, sizeof(str) - 7, fmt, args);
     va_end(args);
     fprintf(stderr, "%s\n", str);
+}
+
+static void print_mem_log_header(void)
+{
+    printf("H CMD %s\n", mem_log_header.cmdline);
+    printf("H I1 %d %d %d\n", mem_log_header.I1.size, mem_log_header.I1.assoc, mem_log_header.I1.line_size);
+    printf("H D1 %d %d %d\n", mem_log_header.D1.size, mem_log_header.D1.assoc, mem_log_header.D1.line_size);
+    printf("H LL %d %d %d\n", mem_log_header.LL.size, mem_log_header.LL.assoc, mem_log_header.LL.line_size);
 }
 
 static void open_mem_log_file(const HChar* filename)
@@ -75,6 +83,8 @@ static void open_mem_log_file(const HChar* filename)
     } else {
         mem_log_fd = o;
     }
+    read(mem_log_fd, &mem_log_header, sizeof(mem_log_header_t));
+    print_mem_log_header();
 }
 
 static void dump_buffer(LogEntry* buffer, Int n)

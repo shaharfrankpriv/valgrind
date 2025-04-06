@@ -90,6 +90,26 @@ static void cachesim_initcache(cache_t config, cache_t2* c)
     c->total_used = 0;
 }
 
+/*
+ * Flushes the cache.
+ * Returns the number of dirty lines evicted.
+ */
+int cache_flush(cache_t2* c)
+{
+    int i;
+    int dirty_lines = 0;
+    for (i = 0; i < c->sets * c->assoc; i++) {
+        if (c->dirty[i]) {
+            dirty_lines++;
+            if (c->is_llc) {
+                log_mem_access(c->tags[i] << c->line_size_bits, c->line_size, ACCESS_STORE, CACHE_STORE);
+            }
+            c->dirty[i] = 0;
+        }
+    }
+    return dirty_lines;
+}
+
 /* SF: Brian Kernighan’s Algorithm */
 __attribute__((always_inline)) static __inline__ Int count_bits(UWord n)
 {

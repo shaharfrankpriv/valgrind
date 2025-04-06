@@ -13,7 +13,7 @@ static LogBuffer* inactive_buffer;
 static int mem_log_fd = -1;
 static Long guest_instrs_executed = 0;  // Global instruction counter
 
-static void init_mem_logging(const HChar* filename)
+static void init_mem_logging(const HChar* filename, mem_log_header_t* mem_log_header)
 {
     // Initialize buffers
     VG_(memset)(&buffer1, 0, sizeof(LogBuffer));
@@ -38,6 +38,7 @@ static void init_mem_logging(const HChar* filename)
     } else {
         mem_log_fd = sr_Res(o);
     }
+    VG_(write)(mem_log_fd, mem_log_header, sizeof(mem_log_header_t));
 }
 
 static void flush_mem_log_to_file(LogBuffer* buffer)

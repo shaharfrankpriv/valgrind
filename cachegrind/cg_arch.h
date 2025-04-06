@@ -36,6 +36,13 @@ typedef struct {
     Int line_size;  // bytes
 } cache_t;
 
+typedef struct {
+    HChar cmdline[1024];
+    cache_t I1;
+    cache_t D1;
+    cache_t LL;
+} mem_log_header_t;
+
 typedef enum {
     CACHE_HIT_L1,
     CACHE_MISS_L1,
@@ -50,7 +57,7 @@ static inline Int cache_hit_char(CacheHitType hit_type)
     case CACHE_HIT_L1:
         return 'H';
     case CACHE_MISS_L1:
-        return 'L';
+        return 'm';
     case CACHE_MISS_LL:
         return 'M';
     case CACHE_STORE:

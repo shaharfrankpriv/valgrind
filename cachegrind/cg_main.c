@@ -1462,6 +1462,10 @@ static void cg_fini(Int exitcode)
     Double LL_avg_words;
     Int l1, l2, l3;
 
+    LL.total_dirty_read_evictions += cache_flush(&LL);
+    D1.total_dirty_read_evictions += cache_flush(&D1);
+    I1.total_dirty_read_evictions += cache_flush(&I1);
+
     fprint_CC_table_and_calc_totals();
 
     if (clo_mem_log) {
@@ -1519,8 +1523,8 @@ static void cg_fini(Int exitcode)
         VG_(umsg)(fmt, "D1 avg words: ", D_total.l1_words, Dr_total.l1_words, Dw_total.l1_words);
         VG_(umsg)(fmt, "D1  misses:   ", D_total.m1, Dr_total.m1, Dw_total.m1);
         VG_(umsg)(fmt, "LLd misses:   ", D_total.mL, Dr_total.mL, Dw_total.mL);
-        VG_(umsg)("LLd evicts %llu data evicted %llu bytes\n", D_total.st, D_total.st * LL.line_size);
-        VG_(umsg)("LLd loads %llu data evicted %llu bytes\n", D_total.ld, D_total.ld * LL.line_size);
+        VG_(umsg)("LLd evicts %llu data stored %llu bytes\n", D_total.st, D_total.st * LL.line_size);
+        VG_(umsg)("LLd loads %llu data loaded %llu bytes\n", D_total.ld, D_total.ld * LL.line_size);
 
         if (0 == D_total.a)
             D_total.a = 1;
@@ -1720,8 +1724,20 @@ static void cg_post_clo_init(void)
     //sg_build_segment_map();
 
     cachesim_initcaches(I1c, D1c, LLc);
+
     if (clo_mem_log) {
-        init_mem_logging(clo_cachegrind_mem_file);
+        mem_log_header_t mem_log_header;
+        VG_(memset)(&mem_log_header, 0, sizeof(mem_log_header_t));
+        mem_log_header.I1 = I1c;
+        mem_log_header.D1 = D1c;
+        mem_log_header.LL = LLc;
+        int si;
+        si = VG_(sprintf)(mem_log_header.cmdline, "%s", VG_(args_the_exename));
+        for (int i = 0; i < VG_(sizeXA)(VG_(args_for_client)); i++) {
+            HChar* arg = *(HChar**)VG_(indexXA)(VG_(args_for_client), i);
+            si += VG_(sprintf)(mem_log_header.cmdline + si, " %s", arg);
+        }
+        init_mem_logging(clo_cachegrind_mem_file, &mem_log_header);
     }
 }
 
