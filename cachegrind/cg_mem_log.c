@@ -13,6 +13,7 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_xarray.h"
 
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,6 +68,30 @@ static void print_mem_log_header(void)
     printf("H LL %d %d %d\n", mem_log_header.LL.size, mem_log_header.LL.assoc, mem_log_header.LL.line_size);
 }
 
+/*
+ * Read n bytes from fd into buf.
+ * Returns the number of bytes read, 0 on EOF, -1 on error.
+ */
+static int readn(int fd, void* buf, int n)
+{
+    int left = n;
+    while (left > 0) {
+        int r = read(fd, buf, left);
+        if (r == 0) {
+            return n - left;  // EOF
+        }
+        if (r < 0) {
+            if (errno == EINTR || errno == EWOULDBLOCK) {
+                continue;
+            }
+            return -1;
+        }
+        left -= r;
+        buf += r;
+    }
+    return n;
+}
+
 static void open_mem_log_file(const HChar* filename)
 {
     // Initialize buffers
@@ -83,7 +108,7 @@ static void open_mem_log_file(const HChar* filename)
     } else {
         mem_log_fd = o;
     }
-    read(mem_log_fd, &mem_log_header, sizeof(mem_log_header_t));
+    readn(mem_log_fd, &mem_log_header, sizeof(mem_log_header_t));
     print_mem_log_header();
 }
 
@@ -98,11 +123,15 @@ static void dump_buffer(LogEntry* buffer, Int n)
 
 static int read_buffer(void)
 {
-    LogEntry buffer[BUFFER_SIZE];
+    LogEntry buffer[BUFFER_SIZE * 64];
     Debug("Reading buffer");
-    Int n = read(mem_log_fd, (void*)buffer, sizeof(buffer));
-    if (n <= 0) {
-        return -1;
+    Int n = readn(mem_log_fd, (void*)buffer, sizeof(buffer));
+    if (n < 0) {
+        fprintf(stderr, "error while reading mem file: %m\n");
+        exit(1);
+    }
+    if (n == 0) {
+        return 0;  // EOF
     }
     Debug("Read %d entries", n);
     dump_buffer(buffer, n / sizeof(LogEntry));
@@ -156,8 +185,10 @@ int main(int argc, char** argv)
     argc -= i;
     argv += i;
 
-    if (argc < 1)
-        usage();
+    if (argc == 0) {
+        argv[0] = "/dev/stdin";
+        argc = 1;
+    }
 
     /* Scan args, all arguments are filenames */
     for (i = 0; i < argc; i++) {
