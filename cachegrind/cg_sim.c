@@ -59,6 +59,8 @@ typedef struct {
     Bool is_llc;                       /* Is this a Last Level Cache? */
 } cache_t2;
 
+int cache_flush(cache_t2* c);
+
 /* By this point, the size/assoc/line_size has been checked. */
 static void cachesim_initcache(cache_t config, cache_t2* c)
 {
@@ -126,7 +128,7 @@ __attribute__((always_inline)) static __inline__ Int count_bits(UWord n)
  * then its means that the touched area is spanned across the next line
  * as well.
  */
-static __inline__ Int set_used(UWord addr, Int size, Int line_size, UWord* used)
+static __inline__ Int mark_used_bits(UWord addr, Int size, Int line_size, UWord* used)
 {
     *used = 0;
     Int offset = addr & (line_size - 1); /* SF line_size must be pow of 2 */
@@ -152,7 +154,8 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
     int i, j;
     UWord *set, *used;
     UChar* dirty;
-    UWord prev_used = 0; /* SF: prev used - used if shuffled */
+    UWord prev_used = 0;  /* SF: prev used - used if shuffled */
+    UChar prev_dirty = 0; /* SF: prev dirty - dirty if shuffled */
     int prev_bits = 0, post_bits = 0;
 
     set = &(c->tags[set_no * c->assoc]);
@@ -175,55 +178,69 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
     /* If the tag is one other than the MRU, move it into the MRU spot  */
     /* and shuffle the rest down.                                       */
     for (i = 1; i < c->assoc; i++) {
-        if (tag == set[i]) {
-            prev_used = used[i];
-            for (j = i; j > 0; j--) {
-                set[j] = set[j - 1];
-                used[j] = used[j - 1];
-            }
-            set[0] = tag;
-            used[0] = prev_used | u;
-            prev_bits = count_bits(prev_used);
-            post_bits = count_bits(used[0]);
-            c->total_used += post_bits - prev_bits;
-            if (access_type == ACCESS_WRITE) {
-                dirty[0] = 1;
-            }
-
-            return 0; /* hit */
+        if (tag != set[i]) {
+            continue;
         }
-    }
-
-    /* A miss;  install this tag as MRU, shuffle rest down. */
-    prev_bits = count_bits(used[c->assoc - 1]);
-    for (j = c->assoc - 1; j > 0; j--) {
-        set[j] = set[j - 1];
+        // position found, move it to the MRU spot
+        prev_used = used[i];
+        prev_dirty = dirty[i];
+        // push all records from 1..to i down one place
+        for (j = i; j > 0; j--)
+            set[j] = set[j - 1];
         used[j] = used[j - 1];
         dirty[j] = dirty[j - 1];
+        // insert the new record at the MRU spot [0]
+        set[0] = tag;
+        used[0] = prev_used | u;
+        dirty[0] = prev_dirty;
+        // update the total used & dirty
+        prev_bits = count_bits(prev_used);
+        post_bits = count_bits(used[0]);
+        c->total_used += post_bits - prev_bits;
+        if (access_type == ACCESS_WRITE) {
+            dirty[0] = 1;
+        }
+
+        return 0; /* hit */
     }
-    if (access_type == ACCESS_READ) {
-        c->total_read_loads++;
-    } else {
-        c->total_write_loads++;
-    }
-    if (dirty[0] != 0) {
+
+    /* A miss;  install this tag as MRU (c->assoc - 1), shuffle rest down. */
+
+    // If the entry we evict is dirty will need to flush it
+    int mru_index = c->assoc - 1;
+    if (dirty[mru_index] != 0) {
         if (access_type == ACCESS_READ) {
             c->total_dirty_read_evictions++;
         } else {
             c->total_dirty_write_evictions++;
         }
         if (c->is_llc) {
-            log_mem_access(set[0] << c->line_size_bits, c->line_size, ACCESS_STORE, CACHE_STORE);
+            log_mem_access(set[mru_index] << c->line_size_bits, c->line_size, ACCESS_STORE, CACHE_STORE);
         }
+    }
+
+    // Shuffle all records down one place
+    for (j = c->assoc - 1; j > 0; j--) {
+        set[j] = set[j - 1];
+        used[j] = used[j - 1];
+        dirty[j] = dirty[j - 1];
+    }
+
+    // Update the total read/write loads & the memory load is llc
+    if (access_type == ACCESS_READ) {
+        c->total_read_loads++;
+    } else {
+        c->total_write_loads++;
     }
     if (c->is_llc) {
         log_mem_access(tag << c->line_size_bits, c->line_size, ACCESS_LOAD, CACHE_LOAD);
     }
+    // Insert the new record at the MRU spot [0]
     set[0] = tag;
     used[0] = u;
     dirty[0] = access_type == ACCESS_WRITE ? 1 : 0;
     post_bits = count_bits(used[0]);
-    c->total_used += post_bits - prev_bits;
+    c->total_used += post_bits;  // evicted records are not counted, we care just about the current record
 
     return 1; /* miss */
 }
@@ -250,7 +267,7 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_ref_is_miss(cache
     /* Access entirely within line. */
     if (block1 == block2) {
         UWord used = 0;
-        if (set_used(a, size, c->line_size, &used) > 0) {
+        if (mark_used_bits(a, size, c->line_size, &used) > 0) {
             VG_(tool_panic)("set_used didn't consume the block within one line");
         }
         return cachesim_setref_is_miss(c, set1, tag1, used, access_type);
@@ -261,14 +278,14 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_ref_is_miss(cache
         UInt set2 = block2 & c->sets_min_1;
         UWord tag2 = block2;
         UWord used1 = 0, used2 = 0;
-        Int left = set_used(a, size, c->line_size, &used1);
+        Int left = mark_used_bits(a, size, c->line_size, &used1);
         if (left <= 0) {
             VG_(tool_panic)("set_used consumed the block but access is across two lines");
         }
         /* note that set_used may return > 0 if more then two lines are accessed,
        * but we ignore such cases.
        */
-        set_used(0, left, c->line_size, &used2);
+        mark_used_bits(0, left, c->line_size, &used2);
 
         /* always do both, as state is updated as side effect */
         return (cachesim_setref_is_miss(c, set1, tag1, used1, access_type) |
@@ -322,13 +339,13 @@ __attribute__((always_inline)) static __inline__ void cachesim_I1_doref_NoX(Addr
     CacheHitType hit_type = CACHE_HIT_L1;
     // use block as tag
     UWord used = 0;
-    set_used(a, size, I1.line_size, &used);
+    mark_used_bits(a, size, I1.line_size, &used);
     if (cachesim_setref_is_miss(&I1, I1_set, block, used, ACCESS_INSTR)) {
         /* L1 miss */
         cc->m1++;
         hit_type = CACHE_MISS_L1;
         UInt LL_set = block & LL.sets_min_1;
-        set_used(a, size, LL.line_size, &used);
+        mark_used_bits(a, size, LL.line_size, &used);
         // can use block as tag as L1I and LL cache line sizes are equal
         if (cachesim_setref_is_miss(&LL, LL_set, block, used, ACCESS_INSTR)) {
             /* LL miss */

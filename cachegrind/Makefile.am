@@ -12,6 +12,8 @@ EXTRA_DIST = \
 
 bin_SCRIPTS = cg_annotate cg_diff
 
+include_HEADERS = cg_memlog.h
+
 noinst_HEADERS = \
 	cg_arch.h \
 	cg_branchpred.c \

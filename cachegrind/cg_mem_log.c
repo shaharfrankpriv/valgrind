@@ -72,7 +72,7 @@ static void print_mem_log_header(void)
  * Read n bytes from fd into buf.
  * Returns the number of bytes read, 0 on EOF, -1 on error.
  */
-static int readn(int fd, void* buf, int n)
+static int readn(int fd, char* buf, int n)
 {
     int left = n;
     while (left > 0) {
