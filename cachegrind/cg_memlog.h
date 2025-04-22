@@ -9,12 +9,14 @@ typedef struct {
 } cache_t;
 
 typedef struct {
+    HChar magic[16];
     HChar cmdline[1024];
     cache_t I1;
     cache_t D1;
     cache_t LL;
 } mem_log_header_t;
 
+static const HChar* memlog_magic = "MEMLOGv1";
 typedef enum {
     CACHE_HIT_L1,
     CACHE_MISS_L1,
@@ -48,7 +50,8 @@ typedef enum {
     ACCESS_WRITE,
     ACCESS_INSTR,
     ACCESS_STORE,
-    ACCESS_LOAD
+    ACCESS_LOAD,
+    ACCESS_FLUSH
 } AccessType;
 
 static inline Int access_type_char(AccessType atype)
@@ -64,6 +67,8 @@ static inline Int access_type_char(AccessType atype)
         return 'S';
     case ACCESS_LOAD:
         return 'L';
+    case ACCESS_FLUSH:
+        return 'F';
     default:
         return '?';
     }

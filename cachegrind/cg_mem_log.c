@@ -109,6 +109,12 @@ static void open_mem_log_file(const HChar* filename)
         mem_log_fd = o;
     }
     readn(mem_log_fd, &mem_log_header, sizeof(mem_log_header_t));
+    mem_log_header.magic[sizeof(mem_log_header.magic) - 1] = '\0';  // force null termination
+    if (strncmp(mem_log_header.magic, memlog_magic, sizeof(memlog_magic)) != 0) {
+        fprintf(stderr, "invalid magic number in mem file '%s': %s (expected %s)\n", filename, mem_log_header.magic,
+                memlog_magic);
+        exit(1);
+    }
     print_mem_log_header();
 }
 

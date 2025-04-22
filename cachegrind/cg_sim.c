@@ -104,7 +104,7 @@ int cache_flush(cache_t2* c)
         if (c->dirty[i]) {
             dirty_lines++;
             if (c->is_llc) {
-                log_mem_access(c->tags[i] << c->line_size_bits, c->line_size, ACCESS_STORE, CACHE_STORE);
+                log_mem_access(c->tags[i] << c->line_size_bits, c->line_size, ACCESS_FLUSH, CACHE_STORE);
             }
             c->dirty[i] = 0;
         }
@@ -143,13 +143,35 @@ static __inline__ Int mark_used_bits(UWord addr, Int size, Int line_size, UWord*
     return 0;
 }
 
+/* Mark the given tag as dirty. This is used to mark the LL cache entry as dirty if the L1 cache entry is dirty such
+that the LL cache entry is flushed when it is evicted. */
+__attribute__((always_inline)) static __inline__ void cachesim_set_mark_dirty(cache_t2* c, UInt set_no, UWord tag)
+{
+    int i;
+
+    UWord* set = &(c->tags[set_no * c->assoc]);
+    UChar* dirty = &(c->dirty[set_no * c->assoc]);
+
+    for (i = 1; i < c->assoc; i++) {
+        if (tag != set[i]) {
+            continue;
+        }
+        dirty[i] = 1;
+        return;
+    }
+    //VG_(printf)("set_mark_dirty: tag not found cache: %s is llc: %d set_no: %u tag: %lx\n", c->desc_line, c->is_llc,
+    //            set_no, tag);
+    //VG_(tool_panic)("set_mark_dirty: tag not found");
+}
+
 /* This attribute forces GCC to inline the function, getting rid of a
  * lot of indirection around the cache_t2 pointer, if it is known to be
  * constant in the caller (the caller is inlined itself).
  * Without inlining of simulator functions, cachegrind can get 40% slower.
  */
 __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(cache_t2* c, UInt set_no, UWord tag,
-                                                                              UWord u, AccessType access_type)
+                                                                              UWord u, AccessType access_type,
+                                                                              UWord* evicted_tag)
 {
     int i, j;
     UWord *set, *used;
@@ -157,6 +179,10 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
     UWord prev_used = 0;  /* SF: prev used - used if shuffled */
     UChar prev_dirty = 0; /* SF: prev dirty - dirty if shuffled */
     int prev_bits = 0, post_bits = 0;
+
+    if (evicted_tag != NULL) {
+        *evicted_tag = ~0;  // no tag
+    }
 
     set = &(c->tags[set_no * c->assoc]);
     used = &(c->used[set_no * c->assoc]);
@@ -185,10 +211,11 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
         prev_used = used[i];
         prev_dirty = dirty[i];
         // push all records from 1..to i down one place
-        for (j = i; j > 0; j--)
+        for (j = i; j > 0; j--) {
             set[j] = set[j - 1];
-        used[j] = used[j - 1];
-        dirty[j] = dirty[j - 1];
+            used[j] = used[j - 1];
+            dirty[j] = dirty[j - 1];
+        }
         // insert the new record at the MRU spot [0]
         set[0] = tag;
         used[0] = prev_used | u;
@@ -208,6 +235,9 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
 
     // If the entry we evict is dirty will need to flush it
     int mru_index = c->assoc - 1;
+    if (evicted_tag != NULL) {
+        *evicted_tag = set[mru_index];
+    }
     if (dirty[mru_index] != 0) {
         if (access_type == ACCESS_READ) {
             c->total_dirty_read_evictions++;
@@ -242,11 +272,68 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
     post_bits = count_bits(used[0]);
     c->total_used += post_bits;  // evicted records are not counted, we care just about the current record
 
-    return 1; /* miss */
+    return 1; /* miss, evicted tag is returned in evicted_tag */
+}
+
+__attribute__((always_inline)) static __inline__ void cachesim_mark_dirty(cache_t2* c, Addr a, UChar size)
+{
+    // Access type is used to mark the cache line as dirty.
+
+    /* A memory block has the size of a cache line */
+    UWord block1 = a >> c->line_size_bits;
+    UWord block2 = (a + size - 1) >> c->line_size_bits;
+    UInt set1 = block1 & c->sets_min_1;
+    UWord tag1 = block1;
+
+    cachesim_set_mark_dirty(c, set1, tag1);
+
+    if (block1 != block2) {
+        UInt set2 = block2 & c->sets_min_1;
+        UWord tag2 = block2;
+        cachesim_set_mark_dirty(c, set2, tag2);
+    }
+}
+
+__attribute__((always_inline)) static __inline__ void cachesim_evict_tag(cache_t2* c, UWord tag)
+{
+    // Access type is used to mark the cache line as dirty.
+
+    /* A memory block has the size of a cache line */
+    UInt set_no = tag & c->sets_min_1;
+
+    int i, j;
+    UWord *set, *used;
+    UChar* dirty;
+
+    set = &(c->tags[set_no * c->assoc]);
+    used = &(c->used[set_no * c->assoc]);
+    dirty = &(c->dirty[set_no * c->assoc]);
+
+    /* If the tag is one other than the MRU, move it into the MRU spot  */
+    /* and shuffle the rest down.                                       */
+    for (i = 0; i < c->assoc; i++) {
+        if (tag != set[i]) {
+            continue;
+        }
+        if (c->is_llc && dirty[i]) {
+            log_mem_access(set[i] << c->line_size_bits, c->line_size, ACCESS_STORE, CACHE_STORE);
+        }
+        // push all records from i..to i up one place
+        for (j = i; j < c->assoc - 1; j++) {
+            set[j] = set[j + 1];
+            used[j] = used[j + 1];
+            dirty[j] = dirty[j + 1];
+        }
+        // clear the LRU record
+        set[c->assoc - 1] = ~0;
+        used[c->assoc - 1] = 0;
+        dirty[c->assoc - 1] = 0;
+    }
 }
 
 __attribute__((always_inline)) static __inline__ Bool cachesim_ref_is_miss(cache_t2* c, Addr a, UChar size,
-                                                                           AccessType access_type)
+                                                                           AccessType access_type,
+                                                                           cache_t2* child_cache)
 {
     // Access type is used to mark the cache line as dirty.
 
@@ -270,7 +357,12 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_ref_is_miss(cache
         if (mark_used_bits(a, size, c->line_size, &used) > 0) {
             VG_(tool_panic)("set_used didn't consume the block within one line");
         }
-        return cachesim_setref_is_miss(c, set1, tag1, used, access_type);
+        UWord evicted_tag = ~0;
+        Bool miss = cachesim_setref_is_miss(c, set1, tag1, used, access_type, &evicted_tag);
+        if (evicted_tag != ~0 && child_cache != NULL) {
+            cachesim_evict_tag(child_cache, evicted_tag);
+        }
+        return miss;
     }
 
     /* Access straddles two lines. */
@@ -283,13 +375,22 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_ref_is_miss(cache
             VG_(tool_panic)("set_used consumed the block but access is across two lines");
         }
         /* note that set_used may return > 0 if more then two lines are accessed,
-       * but we ignore such cases.
-       */
+            * but we ignore such cases.
+            */
         mark_used_bits(0, left, c->line_size, &used2);
 
         /* always do both, as state is updated as side effect */
-        return (cachesim_setref_is_miss(c, set1, tag1, used1, access_type) |
-                cachesim_setref_is_miss(c, set2, tag2, used2, access_type));
+        UWord evicted_tag1 = ~0;
+        UWord evicted_tag2 = ~0;
+        Bool miss1 = cachesim_setref_is_miss(c, set1, tag1, used1, access_type, &evicted_tag1);
+        Bool miss2 = cachesim_setref_is_miss(c, set2, tag2, used2, access_type, &evicted_tag2);
+        if (evicted_tag1 != ~0 && child_cache != NULL) {
+            cachesim_evict_tag(child_cache, evicted_tag1);
+        }
+        if (evicted_tag2 != ~0 && child_cache != NULL) {
+            cachesim_evict_tag(child_cache, evicted_tag2);
+        }
+        return miss1 || miss2;
     }
     VG_(printf)("addr: %lx  size: %u  blocks: %lu %lu", a, size, block1, block2);
     VG_(tool_panic)("item straddles more than two cache sets");
@@ -313,11 +414,12 @@ __attribute__((always_inline)) static __inline__ void cachesim_I1_doref_Gen(Addr
 {
     cc->a++; /* access */
     CacheHitType hit_type = CACHE_HIT_L1;
-    if (cachesim_ref_is_miss(&I1, a, size, ACCESS_INSTR)) {
+    if (cachesim_ref_is_miss(&I1, a, size, ACCESS_INSTR, NULL)) {
         hit_type = CACHE_MISS_L1;
         cc->m1++;
 
-        if (cachesim_ref_is_miss(&LL, a, size, ACCESS_INSTR)) {
+        // Inst cache is not inclusive, not need to pass child cache
+        if (cachesim_ref_is_miss(&LL, a, size, ACCESS_INSTR, NULL)) {
             hit_type = CACHE_MISS_LL;
             cc->mL++;
         }
@@ -340,17 +442,24 @@ __attribute__((always_inline)) static __inline__ void cachesim_I1_doref_NoX(Addr
     // use block as tag
     UWord used = 0;
     mark_used_bits(a, size, I1.line_size, &used);
-    if (cachesim_setref_is_miss(&I1, I1_set, block, used, ACCESS_INSTR)) {
+    UWord evicted_tag = ~0;
+    if (cachesim_setref_is_miss(&I1, I1_set, block, used, ACCESS_INSTR, NULL)) {
         /* L1 miss */
         cc->m1++;
         hit_type = CACHE_MISS_L1;
         UInt LL_set = block & LL.sets_min_1;
         mark_used_bits(a, size, LL.line_size, &used);
+        // Inst cache is not inclusive, not need to pass child cache
         // can use block as tag as L1I and LL cache line sizes are equal
-        if (cachesim_setref_is_miss(&LL, LL_set, block, used, ACCESS_INSTR)) {
+        if (cachesim_setref_is_miss(&LL, LL_set, block, used, ACCESS_INSTR, &evicted_tag)) {
             /* LL miss */
             hit_type = CACHE_MISS_LL;
             cc->mL++;
+            // It is possible that the I ref caused a LL cache line to be evicted so invalidate the D1 cache line
+            // as well, as D1 is inclusive
+            if (evicted_tag != ~0) {
+                cachesim_evict_tag(&D1, evicted_tag);
+            }
         }
         //VG_(umsg)("cachesim_I1_doref_NoX: MISS I1 used %d LL used %d\n", I1.total_used, LL.total_used);
     }
@@ -365,16 +474,22 @@ __attribute__((always_inline)) static __inline__ void cachesim_D1_doref(Addr a, 
 {
     cc->a++; /* access */
     CacheHitType hit_type = CACHE_HIT_L1;
-    if (cachesim_ref_is_miss(&D1, a, size, access_type)) {
+    if (cachesim_ref_is_miss(&D1, a, size, access_type, NULL)) {
         /* L1d miss */
         cc->m1++;
         hit_type = CACHE_MISS_L1;
-        if (cachesim_ref_is_miss(&LL, a, size, access_type)) {
+        // Data cache is inclusive, need to pass child cache to ensure D1 entry is evicted if LL entry is evicted
+        if (cachesim_ref_is_miss(&LL, a, size, access_type, &D1)) {
             /* LL miss */
             hit_type = CACHE_MISS_LL;
             cc->mL++;
         }
         //VG_(umsg)("cachesim_D1_doref: MISS D1 used %d LL used %d\n", D1.total_used, LL.total_used);
+    } else {
+        // HIT - if write, propagate the dirty bit to the LL cache line as well
+        if (access_type == ACCESS_WRITE) {
+            cachesim_mark_dirty(&LL, a, size);
+        }
     }
     //VG_(umsg)("cachesim_D1_doref: -D1 used %d LL used %d\n", D1.total_used, LL.total_used);
     log_mem_access(a, size, access_type, hit_type);

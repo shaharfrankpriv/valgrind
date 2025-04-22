@@ -1726,8 +1726,8 @@ static void cg_post_clo_init(void)
     cachesim_initcaches(I1c, D1c, LLc);
 
     if (clo_mem_log) {
-        mem_log_header_t mem_log_header;
-        VG_(memset)(&mem_log_header, 0, sizeof(mem_log_header_t));
+        mem_log_header_t mem_log_header = {0};
+        VG_(strncpy)(mem_log_header.magic, memlog_magic, sizeof(mem_log_header.magic));
         mem_log_header.I1 = I1c;
         mem_log_header.D1 = D1c;
         mem_log_header.LL = LLc;
