@@ -1462,9 +1462,17 @@ static void cg_fini(Int exitcode)
     Double LL_avg_words;
     Int l1, l2, l3;
 
-    LL.total_dirty_read_evictions += cache_flush(&LL);
-    D1.total_dirty_read_evictions += cache_flush(&D1);
-    I1.total_dirty_read_evictions += cache_flush(&I1);
+    // Flush dirty entries in D1 and I1 to LL cache
+    ULong evicted_lines = cache_flush(&D1, &LL);
+    VG_(umsg)("Flush: D1 evicted %llu lines\n", evicted_lines);
+    D1.total_dirty_read_evictions += evicted_lines;
+    evicted_lines = cache_flush(&I1, &LL);
+    VG_(umsg)("Flush: I1 evicted %llu lines\n", evicted_lines);
+    I1.total_dirty_read_evictions += evicted_lines;
+    // Flush dirty entries in LL cache
+    evicted_lines = cache_flush(&LL, NULL);
+    VG_(umsg)("Flush: LL evicted %llu lines\n", evicted_lines);
+    LL.total_dirty_read_evictions += evicted_lines;
 
     fprint_CC_table_and_calc_totals();
 

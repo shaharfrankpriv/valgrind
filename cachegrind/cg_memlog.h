@@ -51,7 +51,8 @@ typedef enum {
     ACCESS_INSTR,
     ACCESS_STORE,
     ACCESS_LOAD,
-    ACCESS_FLUSH
+    ACCESS_FLUSH_L1,
+    ACCESS_FLUSH_LL
 } AccessType;
 
 static inline Int access_type_char(AccessType atype)
@@ -67,7 +68,9 @@ static inline Int access_type_char(AccessType atype)
         return 'S';
     case ACCESS_LOAD:
         return 'L';
-    case ACCESS_FLUSH:
+    case ACCESS_FLUSH_L1:
+        return 'f';
+    case ACCESS_FLUSH_LL:
         return 'F';
     default:
         return '?';
