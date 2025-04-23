@@ -259,7 +259,7 @@ __attribute__((always_inline)) static __inline__ Bool cachesim_setref_is_miss(ca
         } else {
             // Attempt to mark the parent cache entry as dirty, if it fails Store it directly
             if (!cachesim_mark_dirty(parent_cache, ev_addr)) {
-                VG_(printf)("setref_is_miss: mark_dirty failed for ev_addr: %lx\n", ev_addr);
+                //VG_(umsg)("setref_is_miss: mark_dirty failed for ev_addr: %lx\n", ev_addr);
                 log_mem_access(ev_addr, c->line_size, ACCESS_STORE, CACHE_STORE);
             }
         }
